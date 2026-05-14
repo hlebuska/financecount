@@ -1,0 +1,177 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+enum FileProcessingStatus {
+  UPLOADED
+  QUEUED
+  PROCESSING
+  COMPLETED
+  COMPLETED_WITH_WARNINGS
+  FAILED
+  DUPLICATE_FILE
+}
+
+enum RawTransactionStatus {
+  EXTRACTED
+  NORMALIZED
+  SKIPPED_DUPLICATE
+  INVALID
+  NEEDS_REVIEW
+}
+
+enum TransactionDirection {
+  EXPENSE
+  INCOME
+}
+
+enum IngestionIssueSeverity {
+  INFO
+  WARNING
+  ERROR
+}
+
+enum IngestionIssueType {
+  DUPLICATE_FILE
+  PARSE_ERROR
+  MALFORMED_TRANSACTION
+  AMBIGUOUS_MERCHANT
+  DUPLICATE_TRANSACTION
+  UNSUPPORTED_FILE_TYPE
+  INTERNAL_ERROR
+}
+
+model IngestionFile {
+  id     String @id @default(cuid())
+  userId String
+
+  originalName String
+  mimeType     String
+  extension    String?
+  sizeBytes    Int
+  sha256Hash   String
+  storagePath  String
+
+  status                 FileProcessingStatus @default(UPLOADED)
+  queueJobId             String?
+  processingAttemptCount Int                  @default(0)
+  errorMessage           String?
+
+  uploadedAt           DateTime  @default(now())
+  processingStartedAt  DateTime?
+  processingFinishedAt DateTime?
+
+  extractedTransactionsCount  Int @default(0)
+  normalizedTransactionsCount Int @default(0)
+  duplicateTransactionsCount  Int @default(0)
+  invalidTransactionsCount    Int @default(0)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  rawTransactions RawExtractedTransaction[]
+  issues          IngestionIssue[]
+
+  @@index([userId, status])
+  @@index([userId, sha256Hash])
+}
+
+model RawExtractedTransaction {
+  id     String @id @default(cuid())
+  fileId String
+  userId String
+
+  sourceRowIndex Int?
+
+  rawDescription   String?
+  rawAmountText    String?
+  rawCurrencyText  String?
+  rawDirectionText String?
+  rawDateText      String?
+
+  rawPayload Json?
+
+  status           RawTransactionStatus @default(EXTRACTED)
+  parserConfidence Float?
+  skipReason       String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  file               IngestionFile             @relation(fields: [fileId], references: [id], onDelete: Cascade)
+  transaction        Transaction?
+  merchantEnrichment MerchantEnrichmentResult?
+  issues             IngestionIssue[]
+
+  @@index([fileId])
+  @@index([userId, status])
+}
+
+model Transaction {
+  id     String @id @default(cuid())
+  userId String
+
+  rawExtractedTransactionId String? @unique
+
+  amount     Decimal              @db.Decimal(14, 2)
+  currency   String
+  direction  TransactionDirection
+  occurredAt DateTime
+
+  rawMerchantLabel       String?
+  normalizedMerchantName String?
+  category               String?
+  businessType           String?
+  merchantConfidence     Float?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  rawExtractedTransaction RawExtractedTransaction? @relation(fields: [rawExtractedTransactionId], references: [id], onDelete: SetNull)
+
+  @@index([userId, occurredAt])
+  @@index([userId, amount, occurredAt])
+}
+
+model MerchantEnrichmentResult {
+  id String @id @default(cuid())
+
+  rawExtractedTransactionId String @unique
+
+  normalizedMerchantName String?
+  likelyCategory         String?
+  businessType           String?
+  confidence             Float?
+
+  ambiguityFlags Json?
+  rawResponse    Json?
+
+  createdAt DateTime @default(now())
+
+  rawExtractedTransaction RawExtractedTransaction @relation(fields: [rawExtractedTransactionId], references: [id], onDelete: Cascade)
+}
+
+model IngestionIssue {
+  id String @id @default(cuid())
+
+  fileId                    String?
+  rawExtractedTransactionId String?
+
+  severity IngestionIssueSeverity
+  type     IngestionIssueType
+
+  message String
+  details Json?
+
+  createdAt DateTime @default(now())
+
+  file                    IngestionFile?           @relation(fields: [fileId], references: [id], onDelete: Cascade)
+  rawExtractedTransaction RawExtractedTransaction? @relation(fields: [rawExtractedTransactionId], references: [id], onDelete: Cascade)
+
+  @@index([fileId])
+  @@index([rawExtractedTransactionId])
+}
