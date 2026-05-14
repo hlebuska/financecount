@@ -54,7 +54,8 @@ model IngestionFile {
   extension    String?
   sizeBytes    Int
   sha256Hash   String
-  storagePath  String
+  storagePath       String
+  parserOutputText String? @db.Text
 
   status                 FileProcessingStatus @default(UPLOADED)
   queueJobId             String?

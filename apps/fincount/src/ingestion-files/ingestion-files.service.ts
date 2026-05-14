@@ -2,6 +2,7 @@ import {
   BadRequestException,
   Injectable,
   InternalServerErrorException,
+  Logger,
 } from '@nestjs/common';
 import { InjectQueue } from '@nestjs/bullmq';
 import { DbService } from '@app/db';
@@ -18,6 +19,7 @@ import { extname, join } from 'node:path';
 
 @Injectable()
 export class IngestionFilesService {
+  private readonly logger = new Logger(IngestionFilesService.name);
   private readonly uploadDir = join(process.cwd(), 'uploads', 'ingestion-files');
 
   constructor(
@@ -46,7 +48,10 @@ export class IngestionFilesService {
         userId,
         sha256Hash,
         status: {
-          not: FileProcessingStatus.DUPLICATE_FILE,
+          notIn: [
+            FileProcessingStatus.DUPLICATE_FILE,
+            FileProcessingStatus.FAILED,
+          ],
         },
       },
     });
@@ -119,7 +124,7 @@ export class IngestionFilesService {
           fileId: updated.id,
         },
         {
-          jobId: `process-ingestion-file:${updated.id}`,
+          jobId: `process-ingestion-file-${updated.id}`,
           attempts: 3,
           backoff: {
             type: 'exponential',
@@ -148,6 +153,11 @@ export class IngestionFilesService {
         sha256Hash: updated.sha256Hash,
       };
     } catch (error) {
+      this.logger.error(
+        'Failed to save uploaded file.',
+        error instanceof Error ? error.stack : String(error),
+      );
+
       await this.prisma.ingestionFile.update({
         where: {
           id: created.id,
