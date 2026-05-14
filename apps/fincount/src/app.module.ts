@@ -1,12 +1,24 @@
 import { Module } from '@nestjs/common';
+import { BullModule } from '@nestjs/bullmq';
 import { ConfigModule } from '@nestjs/config';
-import { AppController } from './app.controller';
-import { AppService } from './app.service';
+import { FILE_INGESTION_QUEUE } from '@app/contracts';
 import { IngestionFilesModule } from './ingestion-files/ingestion-files.module';
 
 @Module({
-  imports: [ConfigModule.forRoot({ isGlobal: true }), IngestionFilesModule],
-  controllers: [AppController],
-  providers: [AppService],
+  imports: [
+    ConfigModule.forRoot({
+      isGlobal: true,
+    }),
+    BullModule.forRoot({
+      connection: {
+        host: process.env.REDIS_HOST ?? 'localhost',
+        port: Number(process.env.REDIS_PORT ?? 6379),
+      },
+    }),
+    BullModule.registerQueue({
+      name: FILE_INGESTION_QUEUE,
+    }),
+    IngestionFilesModule,
+  ],
 })
 export class AppModule {}

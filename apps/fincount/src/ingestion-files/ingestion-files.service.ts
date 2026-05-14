@@ -3,8 +3,15 @@ import {
   Injectable,
   InternalServerErrorException,
 } from '@nestjs/common';
+import { InjectQueue } from '@nestjs/bullmq';
 import { DbService } from '@app/db';
+import {
+  FILE_INGESTION_QUEUE,
+  PROCESS_INGESTION_FILE_JOB,
+  ProcessIngestionFileJobPayload,
+} from '@app/contracts';
 import { FileProcessingStatus, IngestionIssueSeverity, IngestionIssueType } from '@prisma/client';
+import { Queue } from 'bullmq';
 import { createHash } from 'node:crypto';
 import { mkdir, readFile, rename, unlink } from 'node:fs/promises';
 import { extname, join } from 'node:path';
@@ -13,7 +20,11 @@ import { extname, join } from 'node:path';
 export class IngestionFilesService {
   private readonly uploadDir = join(process.cwd(), 'uploads', 'ingestion-files');
 
-  constructor(private readonly prisma: DbService) {}
+  constructor(
+    private readonly prisma: DbService,
+    @InjectQueue(FILE_INGESTION_QUEUE)
+    private readonly fileIngestionQueue: Queue<ProcessIngestionFileJobPayload>,
+  ) {}
 
   async registerUploadedFile(params: {
     userId: string;
@@ -102,9 +113,36 @@ export class IngestionFilesService {
         },
       });
 
+      const job = await this.fileIngestionQueue.add(
+        PROCESS_INGESTION_FILE_JOB,
+        {
+          fileId: updated.id,
+        },
+        {
+          jobId: `process-ingestion-file:${updated.id}`,
+          attempts: 3,
+          backoff: {
+            type: 'exponential',
+            delay: 2000,
+          },
+          removeOnComplete: 100,
+          removeOnFail: 500,
+        },
+      );
+
+      await this.prisma.ingestionFile.update({
+        where: {
+          id: updated.id,
+        },
+        data: {
+          queueJobId: job.id,
+        },
+      });
+
       return {
         fileId: updated.id,
         status: updated.status,
+        queueJobId: job.id,
         originalName: updated.originalName,
         sizeBytes: updated.sizeBytes,
         sha256Hash: updated.sha256Hash,
