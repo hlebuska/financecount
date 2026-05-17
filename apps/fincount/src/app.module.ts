@@ -3,6 +3,7 @@ import { BullModule } from '@nestjs/bullmq';
 import { ConfigModule } from '@nestjs/config';
 import { FILE_INGESTION_QUEUE } from '@app/contracts';
 import { IngestionFilesModule } from './ingestion-files/ingestion-files.module';
+import { TransactionsModule } from './transactions/transactions.module';
 
 @Module({
   imports: [
@@ -19,6 +20,7 @@ import { IngestionFilesModule } from './ingestion-files/ingestion-files.module';
       name: FILE_INGESTION_QUEUE,
     }),
     IngestionFilesModule,
+    TransactionsModule,
   ],
 })
 export class AppModule {}
