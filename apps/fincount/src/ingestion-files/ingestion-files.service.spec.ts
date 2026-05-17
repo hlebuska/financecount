@@ -15,6 +15,9 @@ describe('IngestionFilesService', () => {
       findMany: jest.Mock;
     };
   };
+  let fileIngestionQueue: {
+    add: jest.Mock;
+  };
 
   beforeEach(async () => {
     prisma = {
@@ -26,7 +29,11 @@ describe('IngestionFilesService', () => {
       },
     };
 
-    service = new IngestionFilesService(prisma as never);
+    fileIngestionQueue = {
+      add: jest.fn(),
+    };
+
+    service = new IngestionFilesService(prisma as never, fileIngestionQueue as never);
   });
 
   afterEach(async () => {
@@ -78,6 +85,9 @@ describe('IngestionFilesService', () => {
       sizeBytes: upload.file.size,
       sha256Hash: expectedHash,
     });
+    fileIngestionQueue.add.mockResolvedValue({
+      id: 'job-1',
+    });
 
     try {
       const result = await service.registerUploadedFile({
@@ -90,7 +100,7 @@ describe('IngestionFilesService', () => {
           userId: 'user-1',
           sha256Hash: expectedHash,
           status: {
-            not: FileProcessingStatus.DUPLICATE_FILE,
+            notIn: [FileProcessingStatus.DUPLICATE_FILE, FileProcessingStatus.FAILED],
           },
         },
       });
@@ -107,6 +117,7 @@ describe('IngestionFilesService', () => {
       expect(result).toEqual({
         fileId: id,
         status: FileProcessingStatus.QUEUED,
+        queueJobId: 'job-1',
         originalName: 'test.csv',
         sizeBytes: upload.file.size,
         sha256Hash: expectedHash,

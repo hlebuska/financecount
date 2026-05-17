@@ -29,6 +29,34 @@ enum TransactionDirection {
   INCOME
 }
 
+enum TransactionCategoryStatus {
+  NOT_ATTEMPTED
+  CATEGORIZED
+  UNCATEGORIZED
+}
+
+enum ReviewItemStatus {
+  OPEN
+  RESOLVED
+  DISMISSED
+}
+
+enum ReviewItemType {
+  UNCATEGORIZED_TRANSACTION
+}
+
+enum RuleMatchType {
+  EXACT
+  CONTAINS
+  REGEX
+}
+
+enum MerchantCategoryRuleSource {
+  USER_CORRECTION
+  SYSTEM_GLOBAL
+  MANUAL_ADMIN
+}
+
 enum IngestionIssueSeverity {
   INFO
   WARNING
@@ -41,6 +69,7 @@ enum IngestionIssueType {
   MALFORMED_TRANSACTION
   AMBIGUOUS_MERCHANT
   DUPLICATE_TRANSACTION
+  LOW_CONFIDENCE_CATEGORY
   UNSUPPORTED_FILE_TYPE
   INTERNAL_ERROR
 }
@@ -94,6 +123,14 @@ model RawExtractedTransaction {
   rawDirectionText String?
   rawDateText      String?
 
+  normalizedAmount            Decimal?              @db.Decimal(14, 2)
+  normalizedCurrency          String?
+  normalizedDirection         TransactionDirection?
+  normalizedOccurredAt        DateTime?
+  normalizedMerchantCandidate String?
+  sourceFingerprint           String?
+  fuzzyFingerprint            String?
+
   rawPayload Json?
 
   status           RawTransactionStatus @default(EXTRACTED)
@@ -107,6 +144,7 @@ model RawExtractedTransaction {
   transaction        Transaction?
   merchantEnrichment MerchantEnrichmentResult?
   issues             IngestionIssue[]
+  reviewItems        ReviewItem[]
 
   @@index([fileId])
   @@index([userId, status])
@@ -125,17 +163,81 @@ model Transaction {
 
   rawMerchantLabel       String?
   normalizedMerchantName String?
-  category               String?
+  categoryId             String?
+  categoryStatus         TransactionCategoryStatus @default(NOT_ATTEMPTED)
   businessType           String?
   merchantConfidence     Float?
+  sourceFingerprint      String?
+  fuzzyFingerprint       String?
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
+  category                Category?                @relation(fields: [categoryId], references: [id], onDelete: SetNull)
   rawExtractedTransaction RawExtractedTransaction? @relation(fields: [rawExtractedTransactionId], references: [id], onDelete: SetNull)
+  reviewItems             ReviewItem[]
 
   @@index([userId, occurredAt])
   @@index([userId, amount, occurredAt])
+  @@index([userId, sourceFingerprint])
+}
+
+model ReviewItem {
+  id String @id @default(cuid())
+
+  userId String
+
+  rawExtractedTransactionId String?
+  transactionId            String?
+
+  type    ReviewItemType
+  status  ReviewItemStatus @default(OPEN)
+  message String
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  rawExtractedTransaction RawExtractedTransaction? @relation(fields: [rawExtractedTransactionId], references: [id], onDelete: Cascade)
+  transaction            Transaction?            @relation(fields: [transactionId], references: [id], onDelete: Cascade)
+
+  @@index([userId, status])
+  @@index([rawExtractedTransactionId])
+  @@index([transactionId])
+}
+
+model MerchantCategoryRule {
+  id String @id @default(cuid())
+
+  userId String?
+
+  rawPattern String
+  matchType  RuleMatchType
+
+  normalizedMerchantName String?
+  categoryId             String?
+  businessType           String?
+  confidence             Float                  @default(1)
+  source                 MerchantCategoryRuleSource
+
+  category  Category? @relation(fields: [categoryId], references: [id], onDelete: SetNull)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([userId])
+  @@index([source])
+}
+
+model Category {
+  id   String @id @default(cuid())
+  slug String @unique
+  name String @unique
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  transactions Transaction[]
+  merchantCategoryRules MerchantCategoryRule[]
 }
 
 model MerchantEnrichmentResult {

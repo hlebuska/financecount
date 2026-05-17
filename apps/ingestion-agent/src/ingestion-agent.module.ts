@@ -5,7 +5,12 @@ import { HttpModule } from '@nestjs/axios';
 import { FILE_INGESTION_QUEUE } from '@app/contracts';
 import { DbModule } from '@app/db';
 import { FileIngestionProcessor } from './file-ingestion.processor';
+import { MerchantEnrichmentService } from './merchant-enrichment.service';
 import { ParserClientService } from './parser-client.service';
+import { TransactionCategorizerService } from './transaction-categorizer.service';
+import { TransactionDeduplicationService } from './transaction-deduplication.service';
+import { TransactionFinalizerService } from './transaction-finalizer.service';
+import { TransactionNormalizerService } from './transaction-normalizer.service';
 import { TransactionStructurerService } from './transaction-structurer.service';
 
 @Module({
@@ -27,7 +32,12 @@ import { TransactionStructurerService } from './transaction-structurer.service';
   ],
   providers: [
     FileIngestionProcessor,
+    MerchantEnrichmentService,
     ParserClientService,
+    TransactionCategorizerService,
+    TransactionDeduplicationService,
+    TransactionFinalizerService,
+    TransactionNormalizerService,
     TransactionStructurerService,
   ],
 })
