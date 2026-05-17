@@ -16,6 +16,19 @@ enum FileProcessingStatus {
   DUPLICATE_FILE
 }
 
+enum IngestionFileStage {
+  UPLOADING
+  QUEUED
+  PARSING_FILE
+  STRUCTURING_TRANSACTIONS
+  PROCESSING_TRANSACTIONS
+  CATEGORIZING_TRANSACTIONS
+  FINALIZING_FILE
+  COMPLETED
+  FAILED
+  DUPLICATE_FILE
+}
+
 enum RawTransactionStatus {
   EXTRACTED
   NORMALIZED
@@ -87,6 +100,12 @@ model IngestionFile {
   parserOutputText String? @db.Text
 
   status                 FileProcessingStatus @default(UPLOADED)
+  currentStage           IngestionFileStage   @default(UPLOADING)
+  currentStageMessage    String?
+  progressPercent        Int                  @default(0)
+  totalRows              Int                  @default(0)
+  processedRows          Int                  @default(0)
+  currentRowIndex        Int?
   queueJobId             String?
   processingAttemptCount Int                  @default(0)
   errorMessage           String?
@@ -105,9 +124,25 @@ model IngestionFile {
 
   rawTransactions RawExtractedTransaction[]
   issues          IngestionIssue[]
+  processingEvents IngestionFileProcessingEvent[]
 
   @@index([userId, status])
   @@index([userId, sha256Hash])
+}
+
+model IngestionFileProcessingEvent {
+  id     String @id @default(cuid())
+  fileId String
+
+  stage    IngestionFileStage
+  message  String
+  metadata Json?
+
+  createdAt DateTime @default(now())
+
+  file IngestionFile @relation(fields: [fileId], references: [id], onDelete: Cascade)
+
+  @@index([fileId, createdAt])
 }
 
 model RawExtractedTransaction {

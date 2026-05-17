@@ -1,4 +1,4 @@
-import { FileProcessingStatus } from '@prisma/client';
+import { FileProcessingStatus, IngestionFileStage } from '@prisma/client';
 import { createHash } from 'node:crypto';
 import { mkdtemp, rm, stat, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
@@ -108,10 +108,11 @@ describe('IngestionFilesService', () => {
         where: {
           id,
         },
-        data: {
+        data: expect.objectContaining({
           storagePath: finalStoragePath,
           status: FileProcessingStatus.QUEUED,
-        },
+          currentStage: IngestionFileStage.QUEUED,
+        }),
       });
       await expect(stat(finalStoragePath)).resolves.toBeDefined();
       expect(result).toEqual({
@@ -157,6 +158,7 @@ describe('IngestionFilesService', () => {
           data: expect.objectContaining({
             sha256Hash: expectedHash,
             status: FileProcessingStatus.DUPLICATE_FILE,
+            currentStage: IngestionFileStage.DUPLICATE_FILE,
             storagePath: '/uploads/original.csv',
           }),
         }),

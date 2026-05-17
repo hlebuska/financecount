@@ -11,7 +11,12 @@ import {
   PROCESS_INGESTION_FILE_JOB,
   ProcessIngestionFileJobPayload,
 } from '@app/contracts';
-import { FileProcessingStatus, IngestionIssueSeverity, IngestionIssueType } from '@prisma/client';
+import {
+  FileProcessingStatus,
+  IngestionFileStage,
+  IngestionIssueSeverity,
+  IngestionIssueType,
+} from '@prisma/client';
 import { Queue } from 'bullmq';
 import { createHash } from 'node:crypto';
 import { mkdir, readFile, rename, unlink } from 'node:fs/promises';
@@ -69,6 +74,9 @@ export class IngestionFilesService {
           sha256Hash,
           storagePath: duplicate.storagePath,
           status: FileProcessingStatus.DUPLICATE_FILE,
+          currentStage: IngestionFileStage.DUPLICATE_FILE,
+          currentStageMessage: 'This file matches a previous upload.',
+          progressPercent: 100,
           errorMessage: `Duplicate of file ${duplicate.id}`,
           issues: {
             create: {
@@ -76,6 +84,15 @@ export class IngestionFilesService {
               type: IngestionIssueType.DUPLICATE_FILE,
               message: 'This exact file was already uploaded.',
               details: {
+                duplicateOfFileId: duplicate.id,
+              },
+            },
+          },
+          processingEvents: {
+            create: {
+              stage: IngestionFileStage.DUPLICATE_FILE,
+              message: 'Upload rejected because this file already exists.',
+              metadata: {
                 duplicateOfFileId: duplicate.id,
               },
             },
@@ -100,6 +117,14 @@ export class IngestionFilesService {
         sha256Hash,
         storagePath: 'pending',
         status: FileProcessingStatus.UPLOADED,
+        currentStage: IngestionFileStage.UPLOADING,
+        currentStageMessage: 'Preparing uploaded file for processing.',
+        processingEvents: {
+          create: {
+            stage: IngestionFileStage.UPLOADING,
+            message: 'Upload received and stored temporarily.',
+          },
+        },
       },
     });
 
@@ -115,6 +140,14 @@ export class IngestionFilesService {
         data: {
           storagePath: finalStoragePath,
           status: FileProcessingStatus.QUEUED,
+          currentStage: IngestionFileStage.QUEUED,
+          currentStageMessage: 'File queued for processing.',
+          processingEvents: {
+            create: {
+              stage: IngestionFileStage.QUEUED,
+              message: 'File saved and added to the processing queue.',
+            },
+          },
         },
       });
 
@@ -164,7 +197,15 @@ export class IngestionFilesService {
         },
         data: {
           status: FileProcessingStatus.FAILED,
+          currentStage: IngestionFileStage.FAILED,
+          currentStageMessage: 'Failed before processing could start.',
           errorMessage: error instanceof Error ? error.message : 'Unknown upload error',
+          processingEvents: {
+            create: {
+              stage: IngestionFileStage.FAILED,
+              message: 'The upload could not be saved for processing.',
+            },
+          },
         },
       });
 
@@ -186,6 +227,12 @@ export class IngestionFilesService {
       },
       include: {
         issues: true,
+        processingEvents: {
+          orderBy: {
+            createdAt: 'desc',
+          },
+          take: 6,
+        },
       },
     });
   }
@@ -199,6 +246,11 @@ export class IngestionFilesService {
       include: {
         issues: true,
         rawTransactions: true,
+        processingEvents: {
+          orderBy: {
+            createdAt: 'desc',
+          },
+        },
       },
     });
 

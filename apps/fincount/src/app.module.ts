@@ -4,6 +4,8 @@ import { ConfigModule } from '@nestjs/config';
 import { FILE_INGESTION_QUEUE } from '@app/contracts';
 import { IngestionFilesModule } from './ingestion-files/ingestion-files.module';
 import { TransactionsModule } from './transactions/transactions.module';
+import { CategoriesService } from './categories/categories.service';
+import { CategoriesModule } from './categories/categories.module';
 
 @Module({
   imports: [
@@ -21,6 +23,7 @@ import { TransactionsModule } from './transactions/transactions.module';
     }),
     IngestionFilesModule,
     TransactionsModule,
+    CategoriesModule,
   ],
 })
 export class AppModule {}

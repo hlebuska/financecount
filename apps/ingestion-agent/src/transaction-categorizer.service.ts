@@ -222,6 +222,14 @@ export class TransactionCategorizerService {
       return null;
     }
 
+    const categories = await this.prisma.category.findMany({
+  select: {
+    name: true,
+  },
+});
+
+const categoryNames = categories.map((c) => c.name);
+
     const response = await this.openai.responses.create({
       model: this.model,
       input: [
@@ -232,9 +240,9 @@ export class TransactionCategorizerService {
               type: 'input_text',
               text: [
                 'Classify a financial transaction into a spending category when reasonably confident.',
-                'Return strict JSON only.',
+                'Return strict JSON only. Convert currencies to ISO 4217 codes (CAPS). Use the following categories:',
                 'If uncertain, set category and merchant name to null and use low confidence.',
-                `Only choose one of these existing categories: ${DEFAULT_CATEGORIES.map((category) => category.name).join(', ')}.`,
+                `Only choose one of these existing categories: ${categoryNames.join(', ')}.`,
                 'Do not invent new categories.',
               ].join(' '),
             },

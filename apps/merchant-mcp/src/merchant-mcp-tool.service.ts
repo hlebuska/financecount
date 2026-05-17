@@ -115,6 +115,7 @@ export class MerchantMcpToolService {
         tools: [
           {
             type: 'web_search',
+            search_context_size: 'low',
           },
         ],
         input: this.buildWebSearchPrompt(input, searchQuery),
