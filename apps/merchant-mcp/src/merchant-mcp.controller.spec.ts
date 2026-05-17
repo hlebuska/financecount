@@ -1,6 +1,6 @@
 import { Test, TestingModule } from '@nestjs/testing';
 import { MerchantMcpController } from './merchant-mcp.controller';
-import { MerchantMcpService } from './merchant-mcp.service';
+import { MerchantMcpServerService } from './merchant-mcp-server.service';
 
 describe('MerchantMcpController', () => {
   let merchantMcpController: MerchantMcpController;
@@ -8,15 +8,22 @@ describe('MerchantMcpController', () => {
   beforeEach(async () => {
     const app: TestingModule = await Test.createTestingModule({
       controllers: [MerchantMcpController],
-      providers: [MerchantMcpService],
+      providers: [
+        {
+          provide: MerchantMcpServerService,
+          useValue: {
+            createServer: jest.fn(),
+          },
+        },
+      ],
     }).compile();
 
     merchantMcpController = app.get<MerchantMcpController>(MerchantMcpController);
   });
 
-  describe('root', () => {
-    it('should return "Hello World!"', () => {
-      expect(merchantMcpController.getHello()).toBe('Hello World!');
+  describe('health', () => {
+    it('should return ok', () => {
+      expect(merchantMcpController.getHealth()).toEqual({ ok: true });
     });
   });
 });

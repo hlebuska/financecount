@@ -4,6 +4,9 @@ import { TransactionCategorizerService } from './transaction-categorizer.service
 describe('TransactionCategorizerService', () => {
   it('prefers user and global rules before enrichment or LLM classification', async () => {
     const prisma = {
+      category: {
+        findUnique: jest.fn(),
+      },
       merchantCategoryRule: {
         findMany: jest.fn().mockResolvedValue([
           {
@@ -42,6 +45,7 @@ describe('TransactionCategorizerService', () => {
 
     const result = await service.categorize({
       userId: 'user-1',
+      rawExtractedTransactionId: 'raw-1',
       rawDescription: 'Yandex Go Almaty',
       normalized: {
         amount: '1250.50',
@@ -67,6 +71,9 @@ describe('TransactionCategorizerService', () => {
 
   it('falls back to uncategorized when no rule or confident enrichment exists', async () => {
     const prisma = {
+      category: {
+        findUnique: jest.fn(),
+      },
       merchantCategoryRule: {
         findMany: jest.fn().mockResolvedValue([]),
       },
@@ -84,6 +91,7 @@ describe('TransactionCategorizerService', () => {
 
     const result = await service.categorize({
       userId: 'user-1',
+      rawExtractedTransactionId: 'raw-2',
       rawDescription: 'Kaspi QR',
       normalized: {
         amount: '500.00',
@@ -102,6 +110,58 @@ describe('TransactionCategorizerService', () => {
       categoryName: null,
       businessType: null,
       confidence: 0,
+      categoryStatus: TransactionCategoryStatus.UNCATEGORIZED,
+    });
+  });
+
+  it('keeps transactions uncategorized when the model suggests a category outside the existing set', async () => {
+    const prisma = {
+      category: {
+        findUnique: jest.fn().mockResolvedValue(null),
+      },
+      merchantCategoryRule: {
+        findMany: jest.fn().mockResolvedValue([]),
+      },
+      merchantEnrichmentResult: {
+        upsert: jest.fn(),
+      },
+    };
+    const merchantEnrichmentService = {
+      enrich: jest.fn().mockResolvedValue({
+        normalizedMerchantName: 'Unknown Merchant',
+        likelyCategory: 'Crypto',
+        businessType: 'Exchange',
+        confidence: 0.95,
+        ambiguityFlags: [],
+        rawResponse: {},
+      }),
+    };
+    const service = new TransactionCategorizerService(
+      prisma as never,
+      merchantEnrichmentService as never,
+    );
+
+    const result = await service.categorize({
+      userId: 'user-1',
+      rawExtractedTransactionId: 'raw-3',
+      rawDescription: 'Unknown Merchant',
+      normalized: {
+        amount: '100.00',
+        currency: 'KZT',
+        direction: 'EXPENSE',
+        occurredAt: new Date(),
+        merchantCandidate: 'UNKNOWN MERCHANT',
+        sourceFingerprint: 'a',
+        fuzzyFingerprint: 'b',
+      },
+    });
+
+    expect(result).toEqual({
+      normalizedMerchantName: 'UNKNOWN MERCHANT',
+      categoryId: null,
+      categoryName: null,
+      businessType: null,
+      confidence: 0.95,
       categoryStatus: TransactionCategoryStatus.UNCATEGORIZED,
     });
   });

@@ -1,6 +1,6 @@
-import { HttpService } from '@nestjs/axios';
 import { Injectable, Logger } from '@nestjs/common';
-import { firstValueFrom } from 'rxjs';
+import { Client } from '@modelcontextprotocol/sdk/client/index.js';
+import { StreamableHTTPClientTransport } from '@modelcontextprotocol/sdk/client/streamableHttp.js';
 
 export interface MerchantEnrichmentResultPayload {
   normalizedMerchantName: string | null;
@@ -11,12 +11,25 @@ export interface MerchantEnrichmentResultPayload {
   rawResponse: unknown;
 }
 
+interface MerchantToolStructuredContent {
+  normalizedMerchantName: string | null;
+  likelyCategory: string | null;
+  businessType: string | null;
+  confidence: number;
+  ambiguityFlags: string[];
+  provider: string;
+  searchQuery: string;
+  sourceSnippets: Array<{
+    title: string;
+    url: string;
+    snippet: string;
+  }>;
+}
+
 @Injectable()
 export class MerchantEnrichmentService {
   private readonly logger = new Logger(MerchantEnrichmentService.name);
   private readonly merchantMcpUrl = process.env.MERCHANT_MCP_URL;
-
-  constructor(private readonly httpService: HttpService) {}
 
   async enrich(params: {
     description: string | null;
@@ -26,21 +39,53 @@ export class MerchantEnrichmentService {
       return null;
     }
 
+    const serverUrl = this.normalizeMcpUrl(this.merchantMcpUrl);
+    const client = new Client({
+      name: 'ingestion-agent',
+      version: '1.0.0',
+    });
+    const transport = new StreamableHTTPClientTransport(new URL(serverUrl));
+
     try {
-      const response = await firstValueFrom(
-        this.httpService.post<MerchantEnrichmentResultPayload>(`${this.merchantMcpUrl}/enrich`, {
+      await client.connect(transport);
+
+      const result = (await client.callTool({
+        name: 'enrich_merchant',
+        arguments: {
           description: params.description,
           merchantCandidate: params.merchantCandidate,
-        }),
-      );
+        },
+      })) as {
+        structuredContent?: MerchantToolStructuredContent;
+      };
 
-      return response.data;
+      const structuredContent = result.structuredContent;
+
+      if (!structuredContent) {
+        return null;
+      }
+
+      return {
+        normalizedMerchantName: structuredContent.normalizedMerchantName,
+        likelyCategory: structuredContent.likelyCategory,
+        businessType: structuredContent.businessType,
+        confidence: structuredContent.confidence,
+        ambiguityFlags: structuredContent.ambiguityFlags,
+        rawResponse: structuredContent,
+      };
     } catch (error) {
       this.logger.warn(
         `Merchant enrichment failed: ${error instanceof Error ? error.message : String(error)}`,
       );
 
       return null;
+    } finally {
+      await client.close().catch(() => undefined);
+      await transport.close().catch(() => undefined);
     }
+  }
+
+  private normalizeMcpUrl(url: string) {
+    return url.endsWith('/mcp') ? url : `${url.replace(/\/$/, '')}/mcp`;
   }
 }

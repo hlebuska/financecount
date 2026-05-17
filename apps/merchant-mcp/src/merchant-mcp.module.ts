@@ -1,10 +1,22 @@
 import { Module } from '@nestjs/common';
+import { ConfigModule } from '@nestjs/config';
 import { MerchantMcpController } from './merchant-mcp.controller';
-import { MerchantMcpService } from './merchant-mcp.service';
+import { MerchantMcpCacheService } from './merchant-mcp-cache.service';
+import { MerchantMcpServerService } from './merchant-mcp-server.service';
+import { MerchantMcpToolService } from './merchant-mcp-tool.service';
 
 @Module({
-  imports: [],
+  imports: [
+    ConfigModule.forRoot({
+      isGlobal: true,
+    }),
+  ],
   controllers: [MerchantMcpController],
-  providers: [MerchantMcpService],
+  providers: [
+    MerchantMcpCacheService,
+    MerchantMcpServerService,
+    MerchantMcpToolService,
+  ],
+  exports: [MerchantMcpServerService],
 })
 export class MerchantMcpModule {}

@@ -1,4 +1,5 @@
 import { Injectable } from '@nestjs/common';
+import { DEFAULT_CATEGORIES, normalizeCategorySlug } from '@app/contracts';
 import OpenAI from 'openai';
 import { Prisma, RuleMatchType, TransactionCategoryStatus } from '@prisma/client';
 import { z } from 'zod';
@@ -40,9 +41,9 @@ export class TransactionCategorizerService {
 
   async categorize(params: {
     userId: string;
+    rawExtractedTransactionId: string;
     rawDescription: string | null;
     normalized: NormalizedTransactionData;
-    enrichment?: MerchantEnrichmentResultPayload | null;
   }): Promise<CategorizationResult> {
     const ruleMatch = await this.findRuleMatch(params.userId, params.normalized.merchantCandidate);
 
@@ -60,25 +61,26 @@ export class TransactionCategorizerService {
       };
     }
 
-    const enrichment =
-      params.enrichment ??
-      (await this.merchantEnrichmentService.enrich({
-        description: params.rawDescription,
-        merchantCandidate: params.normalized.merchantCandidate,
-      }));
+    const enrichment = await this.persistEnrichment(
+      params.rawExtractedTransactionId,
+      params.normalized,
+      params.rawDescription,
+    );
 
     if (enrichment?.likelyCategory && (enrichment.confidence ?? 0) >= 0.85) {
       const category = await this.resolveCategory(enrichment.likelyCategory);
 
-      return {
-        normalizedMerchantName:
-          enrichment.normalizedMerchantName ?? params.normalized.merchantCandidate,
-        categoryId: category.id,
-        categoryName: category.name,
-        businessType: enrichment.businessType ?? null,
-        confidence: enrichment.confidence ?? 0,
-        categoryStatus: TransactionCategoryStatus.CATEGORIZED,
-      };
+      if (category) {
+        return {
+          normalizedMerchantName:
+            enrichment.normalizedMerchantName ?? params.normalized.merchantCandidate,
+          categoryId: category.id,
+          categoryName: category.name,
+          businessType: enrichment.businessType ?? null,
+          confidence: enrichment.confidence ?? 0,
+          categoryStatus: TransactionCategoryStatus.CATEGORIZED,
+        };
+      }
     }
 
     const llmClassification = await this.classifyWithLlm({
@@ -89,15 +91,17 @@ export class TransactionCategorizerService {
     if (llmClassification?.category && llmClassification.confidence >= 0.85) {
       const category = await this.resolveCategory(llmClassification.category);
 
-      return {
-        normalizedMerchantName:
-          llmClassification.normalizedMerchantName ?? params.normalized.merchantCandidate,
-        categoryId: category.id,
-        categoryName: category.name,
-        businessType: llmClassification.businessType,
-        confidence: llmClassification.confidence,
-        categoryStatus: TransactionCategoryStatus.CATEGORIZED,
-      };
+      if (category) {
+        return {
+          normalizedMerchantName:
+            llmClassification.normalizedMerchantName ?? params.normalized.merchantCandidate,
+          categoryId: category.id,
+          categoryName: category.name,
+          businessType: llmClassification.businessType,
+          confidence: llmClassification.confidence,
+          categoryStatus: TransactionCategoryStatus.CATEGORIZED,
+        };
+      }
     }
 
     return {
@@ -110,13 +114,17 @@ export class TransactionCategorizerService {
     };
   }
 
-  async persistEnrichment(
+  private async persistEnrichment(
     rawExtractedTransactionId: string,
     normalized: NormalizedTransactionData,
     rawDescription: string | null,
   ) {
+    if (!normalized.merchantCandidate) {
+      return null;
+    }
+
     const enrichment = await this.merchantEnrichmentService.enrich({
-      description: rawDescription,
+      description: normalized.merchantCandidate === rawDescription?.trim().toUpperCase() ? null : rawDescription,
       merchantCandidate: normalized.merchantCandidate,
     });
 
@@ -197,22 +205,11 @@ export class TransactionCategorizerService {
   }
 
   private async resolveCategory(categoryName: string) {
-    const trimmed = categoryName.trim().replace(/\s+/g, ' ');
-    const slug = trimmed
-      .toLowerCase()
-      .replace(/[^a-z0-9]+/g, '-')
-      .replace(/^-+|-+$/g, '');
+    const slug = normalizeCategorySlug(categoryName);
 
-    return this.prisma.category.upsert({
+    return this.prisma.category.findUnique({
       where: {
         slug,
-      },
-      update: {
-        name: trimmed,
-      },
-      create: {
-        slug,
-        name: trimmed,
       },
     });
   }
@@ -237,6 +234,8 @@ export class TransactionCategorizerService {
                 'Classify a financial transaction into a spending category when reasonably confident.',
                 'Return strict JSON only.',
                 'If uncertain, set category and merchant name to null and use low confidence.',
+                `Only choose one of these existing categories: ${DEFAULT_CATEGORIES.map((category) => category.name).join(', ')}.`,
+                'Do not invent new categories.',
               ].join(' '),
             },
           ],

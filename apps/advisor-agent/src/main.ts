@@ -3,6 +3,6 @@ import { AdvisorAgentModule } from './advisor-agent.module';
 
 async function bootstrap() {
   const app = await NestFactory.create(AdvisorAgentModule);
-  await app.listen(process.env.port ?? 3000);
+  await app.listen(process.env.ADVISOR_AGENT_PORT ?? process.env.PORT ?? 3003);
 }
 bootstrap();

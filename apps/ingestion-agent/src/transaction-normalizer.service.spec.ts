@@ -73,4 +73,36 @@ describe('TransactionNormalizerService', () => {
     expect(result.data).toBeNull();
     expect(result.reason).toBe('Amount could not be parsed.');
   });
+
+  it('uses payload details when raw description is only a generic transaction descriptor', () => {
+    const result = service.normalize({
+      id: 'raw-3',
+      fileId: 'file-1',
+      userId: 'user-1',
+      sourceRowIndex: 3,
+      rawDescription: 'ПОКУПКА',
+      rawAmountText: '-500',
+      rawCurrencyText: 'KZT',
+      rawDirectionText: 'EXPENSE',
+      rawDateText: '17.05.2026 14:20',
+      normalizedAmount: null,
+      normalizedCurrency: null,
+      normalizedDirection: null,
+      normalizedOccurredAt: null,
+      normalizedMerchantCandidate: null,
+      sourceFingerprint: null,
+      fuzzyFingerprint: null,
+      rawPayload: {
+        details: 'Magnum Cash&Carry Almaty',
+      },
+      status: RawTransactionStatus.EXTRACTED,
+      parserConfidence: 0.91,
+      skipReason: null,
+      createdAt: new Date('2026-05-17T00:00:00.000Z'),
+      updatedAt: new Date('2026-05-17T00:00:00.000Z'),
+    });
+
+    expect(result.reason).toBeNull();
+    expect(result.data?.merchantCandidate).toBe('MAGNUM CASH&CARRY ALMATY');
+  });
 });

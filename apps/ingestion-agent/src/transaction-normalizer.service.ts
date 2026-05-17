@@ -17,6 +17,24 @@ const CURRENCY_ALIASES: Record<string, string> = {
   '₽': 'RUB',
 };
 
+const GENERIC_MERCHANT_DESCRIPTORS = new Set([
+  'ПОКУПКА',
+  'ПОПОЛНЕНИЕ',
+  'ОПЛАТА',
+  'ПЕРЕВОД',
+  'СНЯТИЕ',
+  'ВОЗВРАТ',
+  'СПИСАНИЕ',
+  'ЗАЧИСЛЕНИЕ',
+  'PURCHASE',
+  'TOP UP',
+  'TOP-UP',
+  'PAYMENT',
+  'TRANSFER',
+  'WITHDRAWAL',
+  'REFUND',
+]);
+
 @Injectable()
 export class TransactionNormalizerService {
   normalize(rawTransaction: RawExtractedTransaction): {
@@ -173,17 +191,16 @@ export class TransactionNormalizerService {
     rawDescription: string | null,
     rawPayload: unknown,
   ): string | null {
-    const description = rawDescription?.trim();
+    const candidates = [
+      this.normalizeTextCandidate(rawDescription),
+      this.extractPayloadText(rawPayload, 'details'),
+      this.extractPayloadText(rawPayload, 'reference'),
+      this.extractPayloadText(rawPayload, 'operationType'),
+    ].filter((value): value is string => Boolean(value));
 
-    if (description) {
-      return description.replace(/\s+/g, ' ').toUpperCase();
-    }
-
-    if (rawPayload && typeof rawPayload === 'object' && 'details' in rawPayload) {
-      const details = rawPayload.details;
-
-      if (typeof details === 'string' && details.trim()) {
-        return details.trim().replace(/\s+/g, ' ').toUpperCase();
+    for (const candidate of candidates) {
+      if (!this.isGenericMerchantDescriptor(candidate)) {
+        return candidate;
       }
     }
 
@@ -221,5 +238,25 @@ export class TransactionNormalizerService {
     const value = (rawPayload as Record<string, unknown>)[key];
 
     return typeof value === 'string' && value.trim() ? value.trim() : null;
+  }
+
+  private extractPayloadText(rawPayload: unknown, key: string) {
+    const value = this.extractPayloadField(rawPayload, key);
+
+    return this.normalizeTextCandidate(value);
+  }
+
+  private normalizeTextCandidate(value: string | null | undefined) {
+    if (!value?.trim()) {
+      return null;
+    }
+
+    return value.trim().replace(/\s+/g, ' ').toUpperCase();
+  }
+
+  private isGenericMerchantDescriptor(value: string) {
+    const normalized = value.replace(/[.,;:!?()"']/g, '').trim();
+
+    return GENERIC_MERCHANT_DESCRIPTORS.has(normalized);
   }
 }

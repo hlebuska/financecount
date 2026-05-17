@@ -126,17 +126,11 @@ export class FileIngestionProcessor extends WorkerHost {
         },
       });
 
-      const enrichment = await this.transactionCategorizer.persistEnrichment(
-        rawTransaction.id,
-        normalizedResult.data,
-        rawTransaction.rawDescription,
-      );
-
       const categorization = await this.transactionCategorizer.categorize({
         userId: file.userId,
+        rawExtractedTransactionId: rawTransaction.id,
         rawDescription: rawTransaction.rawDescription,
         normalized: normalizedResult.data,
-        enrichment,
       });
 
       await this.transactionFinalizer.finalize({

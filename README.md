@@ -44,6 +44,33 @@ $ npm run start:dev
 $ npm run start:prod
 ```
 
+## Local port map
+
+Default local ports used by this repo:
+
+- `fincount` API: `3000`
+- `ingestion-agent`: `3001`
+- `analyst-agent`: `3002`
+- `advisor-agent`: `3003`
+- `merchant-mcp` HTTP transport: `3004`
+- `parser-service`: `8001`
+- `postgres`: `5432`
+- `redis`: `6379`
+
+The Nest apps read these env vars:
+
+- `API_PORT`
+- `INGESTION_AGENT_PORT`
+- `ANALYST_AGENT_PORT`
+- `ADVISOR_AGENT_PORT`
+- `MCP_SERVER_PORT`
+
+The ingestion agent should point to the merchant MCP server with:
+
+```env
+MERCHANT_MCP_URL=http://localhost:3004
+```
+
 ## Run tests
 
 ```bash
