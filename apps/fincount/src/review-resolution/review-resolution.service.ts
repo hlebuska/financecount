@@ -1,4 +1,5 @@
 import { Injectable } from '@nestjs/common';
+import { AnalysisRefreshSchedulerService } from '@app/common';
 import { DbService } from '@app/db';
 import { ReviewItemStatus, ReviewItemType } from '@prisma/client';
 import { CategorizationMemoryService } from '../../../../libs/categorization-memory/categorization-memory.service';
@@ -9,6 +10,7 @@ export class ReviewResolutionService {
   constructor(
     private readonly prisma: DbService,
     private readonly categorizationMemoryService: CategorizationMemoryService,
+    private readonly analysisRefreshSchedulerService: AnalysisRefreshSchedulerService,
   ) {}
 
   async resolveCategoryReview(dto: ResolveCategoryReviewDto) {
@@ -69,6 +71,11 @@ export class ReviewResolutionService {
     });
 
     await this.categorizationMemoryService.upsertFromResolvedTransaction(transaction);
+    await this.analysisRefreshSchedulerService.requestRefresh({
+      userId: transaction.userId,
+      occurredAtDates: [transaction.occurredAt],
+      reason: dto.reviewItemId ? 'review_resolution' : 'manual_category_change',
+    });
 
     return transaction;
   }

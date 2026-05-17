@@ -8,6 +8,9 @@ describe('ReviewResolutionService', () => {
   let categorizationMemoryService: {
     upsertFromResolvedTransaction: jest.Mock;
   };
+  let analysisRefreshSchedulerService: {
+    requestRefresh: jest.Mock;
+  };
 
   beforeEach(() => {
     prisma = {
@@ -16,8 +19,15 @@ describe('ReviewResolutionService', () => {
     categorizationMemoryService = {
       upsertFromResolvedTransaction: jest.fn(),
     };
+    analysisRefreshSchedulerService = {
+      requestRefresh: jest.fn(),
+    };
 
-    service = new ReviewResolutionService(prisma as never, categorizationMemoryService as never);
+    service = new ReviewResolutionService(
+      prisma as never,
+      categorizationMemoryService as never,
+      analysisRefreshSchedulerService as never,
+    );
   });
 
   it('should be defined', () => {
@@ -29,6 +39,7 @@ describe('ReviewResolutionService', () => {
       id: 'tx-1',
       userId: 'user-1',
       rawExtractedTransactionId: 'raw-1',
+      occurredAt: new Date('2026-05-17T10:00:00.000Z'),
     };
     const resolvedTransaction = {
       ...updatedTransaction,
@@ -61,6 +72,11 @@ describe('ReviewResolutionService', () => {
     expect(categorizationMemoryService.upsertFromResolvedTransaction).toHaveBeenCalledWith(
       resolvedTransaction,
     );
+    expect(analysisRefreshSchedulerService.requestRefresh).toHaveBeenCalledWith({
+      userId: 'user-1',
+      occurredAtDates: [updatedTransaction.occurredAt],
+      reason: 'review_resolution',
+    });
     expect(result).toBe(resolvedTransaction);
   });
 
@@ -69,6 +85,7 @@ describe('ReviewResolutionService', () => {
       id: 'tx-2',
       userId: 'user-2',
       rawExtractedTransactionId: 'raw-2',
+      occurredAt: new Date('2026-05-17T11:00:00.000Z'),
     };
     const resolvedTransaction = {
       ...updatedTransaction,
@@ -112,6 +129,11 @@ describe('ReviewResolutionService', () => {
     expect(categorizationMemoryService.upsertFromResolvedTransaction).toHaveBeenCalledWith(
       resolvedTransaction,
     );
+    expect(analysisRefreshSchedulerService.requestRefresh).toHaveBeenCalledWith({
+      userId: 'user-2',
+      occurredAtDates: [updatedTransaction.occurredAt],
+      reason: 'manual_category_change',
+    });
     expect(result).toBe(resolvedTransaction);
   });
 });

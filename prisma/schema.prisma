@@ -58,6 +58,38 @@ enum ReviewItemType {
   UNCATEGORIZED_TRANSACTION
 }
 
+enum AnalysisPeriodType {
+  WEEK
+  MONTH
+  ALL_TIME
+}
+
+enum AnalysisDimensionType {
+  OVERALL
+  CATEGORY
+  MERCHANT
+}
+
+enum FinancialMetric {
+  TOTAL_INCOME
+  TOTAL_EXPENSE
+  NET_CASHFLOW
+  TRANSACTION_COUNT
+}
+
+enum AnalysisSignalType {
+  CATEGORY_INCREASE
+  CATEGORY_DECREASE
+  HIGH_UNCATEGORIZED_SHARE
+  TOP_CATEGORY_CHANGED
+}
+
+enum AnalysisSignalSeverity {
+  INFO
+  NOTICE
+  WARNING
+}
+
 enum IngestionIssueSeverity {
   INFO
   WARNING
@@ -237,6 +269,69 @@ model Category {
   updatedAt DateTime @updatedAt
 
   transactions Transaction[]
+}
+
+model AnalysisRefreshRequest {
+  id String @id @default(cuid())
+
+  userId String @unique
+
+  dirtyWeekStarts  Json?
+  dirtyMonthStarts Json?
+  latestReason     String?
+  queuedJobId      String?
+
+  requestedAt DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+}
+
+model FinancialStat {
+  id String @id @default(cuid())
+
+  userId String
+
+  periodType  AnalysisPeriodType
+  periodStart DateTime
+  periodEnd   DateTime
+
+  dimensionType AnalysisDimensionType
+  dimensionKey  String?
+  dimensionLabel String?
+
+  metric   FinancialMetric
+  value    Float
+  currency String?
+
+  computedAt DateTime @default(now())
+
+  @@index([userId, periodType, periodStart])
+  @@index([userId, dimensionType, metric])
+}
+
+model AnalysisSignal {
+  id String @id @default(cuid())
+
+  userId String
+
+  type     AnalysisSignalType
+  severity AnalysisSignalSeverity
+
+  periodType  AnalysisPeriodType
+  periodStart DateTime
+  periodEnd   DateTime
+
+  dimensionKey   String?
+  dimensionLabel String?
+  currency       String?
+
+  title       String
+  description String
+  evidenceJson Json?
+
+  computedAt DateTime @default(now())
+
+  @@index([userId, periodType, periodStart])
+  @@index([userId, type, computedAt])
 }
 
 model MerchantEnrichmentResult {

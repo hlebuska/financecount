@@ -1,4 +1,5 @@
 import { OnWorkerEvent, Processor, WorkerHost } from '@nestjs/bullmq';
+import { AnalysisRefreshSchedulerService } from '@app/common';
 import {
   FILE_INGESTION_QUEUE,
   PROCESS_INGESTION_FILE_JOB,
@@ -32,6 +33,7 @@ export class FileIngestionProcessor extends WorkerHost {
     private readonly transactionDeduplication: TransactionDeduplicationService,
     private readonly transactionCategorizer: TransactionCategorizerService,
     private readonly transactionFinalizer: TransactionFinalizerService,
+    private readonly analysisRefreshSchedulerService: AnalysisRefreshSchedulerService,
   ) {
     super();
   }
@@ -281,6 +283,28 @@ export class FileIngestionProcessor extends WorkerHost {
         },
       },
     });
+
+    const transactions = await this.prisma.transaction.findMany({
+      where: {
+        userId: file.userId,
+        rawExtractedTransaction: {
+          is: {
+            fileId,
+          },
+        },
+      },
+      select: {
+        occurredAt: true,
+      },
+    });
+
+    if (transactions.length > 0) {
+      await this.analysisRefreshSchedulerService.requestRefresh({
+        userId: file.userId,
+        occurredAtDates: transactions.map((transaction) => transaction.occurredAt),
+        reason: 'ingestion_completion',
+      });
+    }
 
     return {
       fileId: completed.id,

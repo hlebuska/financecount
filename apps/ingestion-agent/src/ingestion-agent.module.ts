@@ -2,7 +2,8 @@ import { Module } from '@nestjs/common';
 import { BullModule } from '@nestjs/bullmq';
 import { ConfigModule } from '@nestjs/config';
 import { HttpModule } from '@nestjs/axios';
-import { FILE_INGESTION_QUEUE } from '@app/contracts';
+import { ANALYSIS_REFRESH_QUEUE, FILE_INGESTION_QUEUE } from '@app/contracts';
+import { AnalysisRefreshSchedulerService } from '@app/common';
 import { DbModule } from '@app/db';
 import { FileIngestionProcessor } from './file-ingestion.processor';
 import { MerchantEnrichmentService } from './merchant-enrichment.service';
@@ -31,8 +32,12 @@ import { CategorizationMemoryModule } from '../../../libs/categorization-memory/
     BullModule.registerQueue({
       name: FILE_INGESTION_QUEUE,
     }),
+    BullModule.registerQueue({
+      name: ANALYSIS_REFRESH_QUEUE,
+    }),
   ],
   providers: [
+    AnalysisRefreshSchedulerService,
     FileIngestionProcessor,
     MerchantEnrichmentService,
     ParserClientService,

@@ -18,8 +18,8 @@ const classificationSchema = z.object({
   confidence: z.number().min(0).max(1),
 });
 
-const MEMORY_CATEGORIZATION_CONFIDENCE_THRESHOLD = 0.8;
-const MODEL_CATEGORIZATION_CONFIDENCE_THRESHOLD = 0.92;
+const MEMORY_CATEGORIZATION_CONFIDENCE_THRESHOLD = 0.7;
+const MODEL_CATEGORIZATION_CONFIDENCE_THRESHOLD = 0.85;
 
 function getConfiguredModel() {
   const model = process.env.CHAT_MODEL;

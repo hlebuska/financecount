@@ -194,8 +194,8 @@ export class TransactionNormalizerService {
     const candidates = [
       this.normalizeTextCandidate(rawDescription),
       this.extractPayloadText(rawPayload, 'details'),
-      this.extractPayloadText(rawPayload, 'reference'),
       this.extractPayloadText(rawPayload, 'operationType'),
+      this.extractPayloadText(rawPayload, 'reference'),
     ].filter((value): value is string => Boolean(value));
 
     for (const candidate of candidates) {

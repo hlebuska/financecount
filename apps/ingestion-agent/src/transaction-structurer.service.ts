@@ -62,6 +62,9 @@ export class TransactionStructurerService {
                 'Only extract posted account transactions from sections like "Транзакции по счету".',
                 'Do not extract pending or in-processing transactions from sections like "Сумма в обработке", "Сумма в обработке по счету", or similar pending/processing blocks.',
                 'Use raw text values exactly as shown in the source when possible.',
+                'Set rawDescription to the human-readable operation or merchant name for the transaction.',
+                'Do not use authorization codes, reference numbers, account numbers, or other opaque identifiers as rawDescription.',
+                'If a row contains both an operation name and a reference or authorization code, keep the operation name in rawDescription and put the code in rawPayload.reference.',
                 'Set rawDirectionText to INCOME when money enters the account and EXPENSE when money leaves the account.',
                 'Put the source table row, account, operation type, details, and any references in rawPayload.',
               ].join(' '),
@@ -99,7 +102,8 @@ export class TransactionStructurerService {
                     },
                     rawDescription: {
                       type: ['string', 'null'],
-                      description: 'Raw merchant, counterparty, or operation details.',
+                      description:
+                        'Raw human-readable merchant, counterparty, or operation name. Do not put authorization or reference codes here.',
                     },
                     rawAmountText: {
                       type: ['string', 'null'],
