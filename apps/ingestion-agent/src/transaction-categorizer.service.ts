@@ -1,22 +1,15 @@
 import { Injectable } from '@nestjs/common';
-import { DEFAULT_CATEGORIES, normalizeCategorySlug } from '@app/contracts';
+import { normalizeCategorySlug } from '@app/contracts';
 import OpenAI from 'openai';
-import {
-  Prisma,
-  RuleMatchType,
-  TransactionCategoryStatus,
-} from '@prisma/client';
+import { TransactionCategoryStatus } from '@prisma/client';
 import { z } from 'zod';
 import { DbService } from '@app/db';
 import {
   CategorizationResult,
   NormalizedTransactionData,
 } from './ingestion.types';
-import {
-  MerchantEnrichmentResultPayload,
-  MerchantEnrichmentService,
-} from './merchant-enrichment.service';
-import { CategorizationMemoryService } from 'libs/categorization-memory/categorization-memory.service';
+import { MerchantEnrichmentService } from './merchant-enrichment.service';
+import { CategorizationMemoryService } from '../../../libs/categorization-memory/categorization-memory.service';
 
 const classificationSchema = z.object({
   category: z.string().nullable(),
@@ -24,6 +17,9 @@ const classificationSchema = z.object({
   businessType: z.string().nullable(),
   confidence: z.number().min(0).max(1),
 });
+
+const MEMORY_CATEGORIZATION_CONFIDENCE_THRESHOLD = 0.8;
+const MODEL_CATEGORIZATION_CONFIDENCE_THRESHOLD = 0.92;
 
 function getConfiguredModel() {
   const model = process.env.CHAT_MODEL;
@@ -58,26 +54,6 @@ export class TransactionCategorizerService {
     rawDescription: string | null;
     normalized: NormalizedTransactionData;
   }): Promise<CategorizationResult> {
-    const ruleMatch = await this.findRuleMatch(
-      params.userId,
-      params.normalized.merchantCandidate,
-    );
-
-    if (ruleMatch) {
-      return {
-        normalizedMerchantName:
-          ruleMatch.normalizedMerchantName ??
-          params.normalized.merchantCandidate,
-        categoryId: ruleMatch.category?.id ?? null,
-        categoryName: ruleMatch.category?.name ?? null,
-        businessType: ruleMatch.businessType ?? null,
-        confidence: ruleMatch.confidence,
-        categoryStatus: ruleMatch.category
-          ? TransactionCategoryStatus.CATEGORIZED
-          : TransactionCategoryStatus.UNCATEGORIZED,
-      };
-    }
-
     const memoryMatch =
       await this.categorizationMemoryService.findBestCategoryMatch({
         rawDescription: params.rawDescription,
@@ -85,17 +61,21 @@ export class TransactionCategorizerService {
         direction: params.normalized.direction,
       });
 
-    if (memoryMatch && memoryMatch.score >= 0.65) {
-      return {
-        normalizedMerchantName:
-          memoryMatch.normalizedMerchantName ??
-          params.normalized.merchantCandidate,
-        categoryId: memoryMatch.categoryId,
-        categoryName: memoryMatch.categoryName,
-        businessType: memoryMatch.businessType ?? null,
-        confidence: memoryMatch.score,
-        categoryStatus: TransactionCategoryStatus.CATEGORIZED,
-      };
+    if (memoryMatch && memoryMatch.score >= MEMORY_CATEGORIZATION_CONFIDENCE_THRESHOLD) {
+      const category = await this.resolveMemoryCategory(memoryMatch);
+
+      if (category) {
+        return {
+          normalizedMerchantName:
+            memoryMatch.normalizedMerchantName ??
+            params.normalized.merchantCandidate,
+          categoryId: category.id,
+          categoryName: category.name,
+          businessType: memoryMatch.businessType ?? null,
+          confidence: memoryMatch.score,
+          categoryStatus: TransactionCategoryStatus.CATEGORIZED,
+        };
+      }
     }
 
     const enrichment = await this.persistEnrichment(
@@ -104,7 +84,10 @@ export class TransactionCategorizerService {
       params.rawDescription,
     );
 
-    if (enrichment?.likelyCategory && (enrichment.confidence ?? 0) >= 0.85) {
+    if (
+      enrichment?.likelyCategory &&
+      (enrichment.confidence ?? 0) >= MODEL_CATEGORIZATION_CONFIDENCE_THRESHOLD
+    ) {
       const category = await this.resolveCategory(enrichment.likelyCategory);
 
       if (category) {
@@ -126,7 +109,10 @@ export class TransactionCategorizerService {
       normalized: params.normalized,
     });
 
-    if (llmClassification?.category && llmClassification.confidence >= 0.85) {
+    if (
+      llmClassification?.category &&
+      llmClassification.confidence >= MODEL_CATEGORIZATION_CONFIDENCE_THRESHOLD
+    ) {
       const category = await this.resolveCategory(llmClassification.category);
 
       if (category) {
@@ -200,58 +186,32 @@ export class TransactionCategorizerService {
     return enrichment;
   }
 
-  private async findRuleMatch(
-    userId: string,
-    merchantCandidate: string | null,
-  ): Promise<Prisma.MerchantCategoryRuleGetPayload<{
-    include: { category: true };
-  }> | null> {
-    if (!merchantCandidate) {
-      return null;
-    }
-
-    const rules = await this.prisma.merchantCategoryRule.findMany({
-      where: {
-        OR: [{ userId }, { userId: null }],
-      },
-      include: {
-        category: true,
-      },
-      orderBy: [{ userId: 'desc' }, { confidence: 'desc' }],
-    });
-
-    for (const rule of rules) {
-      if (this.matchesRule(rule, merchantCandidate)) {
-        return rule;
-      }
-    }
-
-    return null;
-  }
-
-  private matchesRule(
-    rule: Prisma.MerchantCategoryRuleGetPayload<{
-      include: { category: true };
-    }>,
-    merchantCandidate: string,
-  ): boolean {
-    const pattern = rule.rawPattern.trim().toUpperCase();
-    const subject = merchantCandidate.toUpperCase();
-
-    switch (rule.matchType) {
-      case RuleMatchType.EXACT:
-        return subject === pattern;
-      case RuleMatchType.CONTAINS:
-        return subject.includes(pattern);
-      case RuleMatchType.REGEX:
-        return new RegExp(rule.rawPattern, 'i').test(merchantCandidate);
-      default:
-        return false;
-    }
-  }
-
   private async resolveCategory(categoryName: string) {
     const slug = normalizeCategorySlug(categoryName);
+
+    return this.prisma.category.findUnique({
+      where: {
+        slug,
+      },
+    });
+  }
+
+  private async resolveMemoryCategory(memoryMatch: {
+    categoryId: string;
+    categoryName: string;
+    categorySlug?: string;
+  }) {
+    const byId = await this.prisma.category.findUnique({
+      where: {
+        id: memoryMatch.categoryId,
+      },
+    });
+
+    if (byId) {
+      return byId;
+    }
+
+    const slug = memoryMatch.categorySlug ?? normalizeCategorySlug(memoryMatch.categoryName);
 
     return this.prisma.category.findUnique({
       where: {

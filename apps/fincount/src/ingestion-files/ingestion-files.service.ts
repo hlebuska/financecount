@@ -14,8 +14,6 @@ import {
 import {
   FileProcessingStatus,
   IngestionFileStage,
-  IngestionIssueSeverity,
-  IngestionIssueType,
 } from '@prisma/client';
 import { Queue } from 'bullmq';
 import { createHash } from 'node:crypto';
@@ -47,65 +45,6 @@ export class IngestionFilesService {
 
     const fileContents = await readFile(file.path);
     const sha256Hash = createHash('sha256').update(fileContents).digest('hex');
-
-    const duplicate = await this.prisma.ingestionFile.findFirst({
-      where: {
-        userId,
-        sha256Hash,
-        status: {
-          notIn: [
-            FileProcessingStatus.DUPLICATE_FILE,
-            FileProcessingStatus.FAILED,
-          ],
-        },
-      },
-    });
-
-    if (duplicate) {
-      await unlink(file.path).catch(() => undefined);
-
-      const duplicateRecord = await this.prisma.ingestionFile.create({
-        data: {
-          userId,
-          originalName: file.originalname,
-          mimeType: file.mimetype,
-          extension: extname(file.originalname).replace('.', '').toLowerCase() || null,
-          sizeBytes: file.size,
-          sha256Hash,
-          storagePath: duplicate.storagePath,
-          status: FileProcessingStatus.DUPLICATE_FILE,
-          currentStage: IngestionFileStage.DUPLICATE_FILE,
-          currentStageMessage: 'This file matches a previous upload.',
-          progressPercent: 100,
-          errorMessage: `Duplicate of file ${duplicate.id}`,
-          issues: {
-            create: {
-              severity: IngestionIssueSeverity.INFO,
-              type: IngestionIssueType.DUPLICATE_FILE,
-              message: 'This exact file was already uploaded.',
-              details: {
-                duplicateOfFileId: duplicate.id,
-              },
-            },
-          },
-          processingEvents: {
-            create: {
-              stage: IngestionFileStage.DUPLICATE_FILE,
-              message: 'Upload rejected because this file already exists.',
-              metadata: {
-                duplicateOfFileId: duplicate.id,
-              },
-            },
-          },
-        },
-      });
-
-      return {
-        fileId: duplicateRecord.id,
-        status: duplicateRecord.status,
-        duplicateOfFileId: duplicate.id,
-      };
-    }
 
     const created = await this.prisma.ingestionFile.create({
       data: {

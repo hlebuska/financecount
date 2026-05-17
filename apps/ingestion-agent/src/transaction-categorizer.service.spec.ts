@@ -1,45 +1,37 @@
-import { RuleMatchType, TransactionCategoryStatus } from '@prisma/client';
+import { TransactionCategoryStatus } from '@prisma/client';
 import { TransactionCategorizerService } from './transaction-categorizer.service';
 
 describe('TransactionCategorizerService', () => {
-  it('prefers user and global rules before enrichment or LLM classification', async () => {
+  it('prefers categorization memory before enrichment or LLM classification', async () => {
     const prisma = {
       category: {
-        findUnique: jest.fn(),
-      },
-      merchantCategoryRule: {
-        findMany: jest.fn().mockResolvedValue([
-          {
-            id: 'rule-1',
-            userId: 'user-1',
-            rawPattern: 'YANDEX GO',
-            matchType: RuleMatchType.CONTAINS,
-            normalizedMerchantName: 'Yandex Go',
-            categoryId: 'category-1',
-            category: {
-              id: 'category-1',
-              slug: 'transport',
-              name: 'Transport',
-              createdAt: new Date(),
-              updatedAt: new Date(),
-            },
-            businessType: 'Ride Hailing',
-            confidence: 1,
-            source: 'USER_CORRECTION',
-            createdAt: new Date(),
-            updatedAt: new Date(),
-          },
-        ]),
+        findUnique: jest
+          .fn()
+          .mockResolvedValueOnce({
+            id: 'category-1',
+            slug: 'transport',
+            name: 'Transport',
+          }),
       },
       merchantEnrichmentResult: {
         upsert: jest.fn(),
       },
+    };
+    const categorizationMemoryService = {
+      findBestCategoryMatch: jest.fn().mockResolvedValue({
+        score: 0.93,
+        categoryId: 'category-1',
+        categoryName: 'Transport',
+        normalizedMerchantName: 'Yandex Go',
+        businessType: 'Ride Hailing',
+      }),
     };
     const merchantEnrichmentService = {
       enrich: jest.fn(),
     };
     const service = new TransactionCategorizerService(
       prisma as never,
+      categorizationMemoryService as never,
       merchantEnrichmentService as never,
     );
 
@@ -63,29 +55,100 @@ describe('TransactionCategorizerService', () => {
       categoryId: 'category-1',
       categoryName: 'Transport',
       businessType: 'Ride Hailing',
-      confidence: 1,
+      confidence: 0.93,
       categoryStatus: TransactionCategoryStatus.CATEGORIZED,
     });
+    expect(categorizationMemoryService.findBestCategoryMatch).toHaveBeenCalled();
     expect(merchantEnrichmentService.enrich).not.toHaveBeenCalled();
   });
 
-  it('falls back to uncategorized when no rule or confident enrichment exists', async () => {
+  it('ignores stale memory category ids and falls through to enrichment', async () => {
     const prisma = {
       category: {
-        findUnique: jest.fn(),
-      },
-      merchantCategoryRule: {
-        findMany: jest.fn().mockResolvedValue([]),
+        findUnique: jest
+          .fn()
+          .mockResolvedValueOnce(null)
+          .mockResolvedValueOnce(null)
+          .mockResolvedValueOnce({
+            id: 'category-2',
+            slug: 'groceries',
+            name: 'Groceries',
+          }),
       },
       merchantEnrichmentResult: {
         upsert: jest.fn(),
       },
+    };
+    const categorizationMemoryService = {
+      findBestCategoryMatch: jest.fn().mockResolvedValue({
+        score: 0.91,
+        categoryId: 'stale-category-id',
+        categoryName: 'Transport',
+        categorySlug: 'transport',
+        normalizedMerchantName: 'Old Merchant',
+        businessType: 'Old Type',
+      }),
+    };
+    const merchantEnrichmentService = {
+      enrich: jest.fn().mockResolvedValue({
+        normalizedMerchantName: 'Magnum',
+        likelyCategory: 'Groceries',
+        businessType: 'Supermarket',
+        confidence: 0.92,
+        ambiguityFlags: [],
+        rawResponse: {},
+      }),
+    };
+    const service = new TransactionCategorizerService(
+      prisma as never,
+      categorizationMemoryService as never,
+      merchantEnrichmentService as never,
+    );
+
+    const result = await service.categorize({
+      userId: 'user-1',
+      rawExtractedTransactionId: 'raw-stale-memory',
+      rawDescription: 'Magnum',
+      normalized: {
+        amount: '2500.00',
+        currency: 'KZT',
+        direction: 'EXPENSE',
+        occurredAt: new Date(),
+        merchantCandidate: 'MAGNUM',
+        sourceFingerprint: 'a',
+        fuzzyFingerprint: 'b',
+      },
+    });
+
+    expect(result).toEqual({
+      normalizedMerchantName: 'Magnum',
+      categoryId: 'category-2',
+      categoryName: 'Groceries',
+      businessType: 'Supermarket',
+      confidence: 0.92,
+      categoryStatus: TransactionCategoryStatus.CATEGORIZED,
+    });
+    expect(merchantEnrichmentService.enrich).toHaveBeenCalled();
+  });
+
+  it('falls back to uncategorized when no confident memory or enrichment exists', async () => {
+    const prisma = {
+      category: {
+        findUnique: jest.fn(),
+      },
+      merchantEnrichmentResult: {
+        upsert: jest.fn(),
+      },
+    };
+    const categorizationMemoryService = {
+      findBestCategoryMatch: jest.fn().mockResolvedValue(null),
     };
     const merchantEnrichmentService = {
       enrich: jest.fn().mockResolvedValue(null),
     };
     const service = new TransactionCategorizerService(
       prisma as never,
+      categorizationMemoryService as never,
       merchantEnrichmentService as never,
     );
 
@@ -119,12 +182,12 @@ describe('TransactionCategorizerService', () => {
       category: {
         findUnique: jest.fn().mockResolvedValue(null),
       },
-      merchantCategoryRule: {
-        findMany: jest.fn().mockResolvedValue([]),
-      },
       merchantEnrichmentResult: {
         upsert: jest.fn(),
       },
+    };
+    const categorizationMemoryService = {
+      findBestCategoryMatch: jest.fn().mockResolvedValue(null),
     };
     const merchantEnrichmentService = {
       enrich: jest.fn().mockResolvedValue({
@@ -138,6 +201,7 @@ describe('TransactionCategorizerService', () => {
     };
     const service = new TransactionCategorizerService(
       prisma as never,
+      categorizationMemoryService as never,
       merchantEnrichmentService as never,
     );
 

@@ -58,18 +58,6 @@ enum ReviewItemType {
   UNCATEGORIZED_TRANSACTION
 }
 
-enum RuleMatchType {
-  EXACT
-  CONTAINS
-  REGEX
-}
-
-enum MerchantCategoryRuleSource {
-  USER_CORRECTION
-  SYSTEM_GLOBAL
-  MANUAL_ADMIN
-}
-
 enum IngestionIssueSeverity {
   INFO
   WARNING
@@ -240,29 +228,6 @@ model ReviewItem {
   @@index([transactionId])
 }
 
-model MerchantCategoryRule {
-  id String @id @default(cuid())
-
-  userId String?
-
-  rawPattern String
-  matchType  RuleMatchType
-
-  normalizedMerchantName String?
-  categoryId             String?
-  businessType           String?
-  confidence             Float                  @default(1)
-  source                 MerchantCategoryRuleSource
-
-  category  Category? @relation(fields: [categoryId], references: [id], onDelete: SetNull)
-
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
-
-  @@index([userId])
-  @@index([source])
-}
-
 model Category {
   id   String @id @default(cuid())
   slug String @unique
@@ -272,7 +237,6 @@ model Category {
   updatedAt DateTime @updatedAt
 
   transactions Transaction[]
-  merchantCategoryRules MerchantCategoryRule[]
 }
 
 model MerchantEnrichmentResult {
