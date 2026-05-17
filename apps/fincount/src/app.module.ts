@@ -6,6 +6,9 @@ import { IngestionFilesModule } from './ingestion-files/ingestion-files.module';
 import { TransactionsModule } from './transactions/transactions.module';
 import { CategoriesService } from './categories/categories.service';
 import { CategoriesModule } from './categories/categories.module';
+import { ReviewResolutionModule } from './review-resolution/review-resolution.module';
+import { CategorizationMemoryService } from '../../../libs/categorization-memory/categorization-memory.service';
+import { CategorizationMemoryModule } from '../../../libs/categorization-memory/categorization-memory.module';
 
 @Module({
   imports: [
@@ -24,6 +27,8 @@ import { CategoriesModule } from './categories/categories.module';
     IngestionFilesModule,
     TransactionsModule,
     CategoriesModule,
+    ReviewResolutionModule,
+    CategorizationMemoryModule,
   ],
 })
 export class AppModule {}

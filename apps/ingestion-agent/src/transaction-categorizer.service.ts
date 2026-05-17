@@ -1,14 +1,22 @@
 import { Injectable } from '@nestjs/common';
 import { DEFAULT_CATEGORIES, normalizeCategorySlug } from '@app/contracts';
 import OpenAI from 'openai';
-import { Prisma, RuleMatchType, TransactionCategoryStatus } from '@prisma/client';
+import {
+  Prisma,
+  RuleMatchType,
+  TransactionCategoryStatus,
+} from '@prisma/client';
 import { z } from 'zod';
 import { DbService } from '@app/db';
-import { CategorizationResult, NormalizedTransactionData } from './ingestion.types';
+import {
+  CategorizationResult,
+  NormalizedTransactionData,
+} from './ingestion.types';
 import {
   MerchantEnrichmentResultPayload,
   MerchantEnrichmentService,
 } from './merchant-enrichment.service';
+import { CategorizationMemoryService } from 'libs/categorization-memory/categorization-memory.service';
 
 const classificationSchema = z.object({
   category: z.string().nullable(),
@@ -30,12 +38,17 @@ function getConfiguredModel() {
 @Injectable()
 export class TransactionCategorizerService {
   private readonly model = getConfiguredModel();
-  private readonly openai = process.env.OPENAI_API_KEY ?? process.env.LLM_API_KEY
-    ? new OpenAI({ apiKey: process.env.OPENAI_API_KEY ?? process.env.LLM_API_KEY })
-    : null;
+
+  private readonly openai =
+    (process.env.OPENAI_API_KEY ?? process.env.LLM_API_KEY)
+      ? new OpenAI({
+          apiKey: process.env.OPENAI_API_KEY ?? process.env.LLM_API_KEY,
+        })
+      : null;
 
   constructor(
     private readonly prisma: DbService,
+    private readonly categorizationMemoryService: CategorizationMemoryService,
     private readonly merchantEnrichmentService: MerchantEnrichmentService,
   ) {}
 
@@ -45,12 +58,16 @@ export class TransactionCategorizerService {
     rawDescription: string | null;
     normalized: NormalizedTransactionData;
   }): Promise<CategorizationResult> {
-    const ruleMatch = await this.findRuleMatch(params.userId, params.normalized.merchantCandidate);
+    const ruleMatch = await this.findRuleMatch(
+      params.userId,
+      params.normalized.merchantCandidate,
+    );
 
     if (ruleMatch) {
       return {
         normalizedMerchantName:
-          ruleMatch.normalizedMerchantName ?? params.normalized.merchantCandidate,
+          ruleMatch.normalizedMerchantName ??
+          params.normalized.merchantCandidate,
         categoryId: ruleMatch.category?.id ?? null,
         categoryName: ruleMatch.category?.name ?? null,
         businessType: ruleMatch.businessType ?? null,
@@ -58,6 +75,26 @@ export class TransactionCategorizerService {
         categoryStatus: ruleMatch.category
           ? TransactionCategoryStatus.CATEGORIZED
           : TransactionCategoryStatus.UNCATEGORIZED,
+      };
+    }
+
+    const memoryMatch =
+      await this.categorizationMemoryService.findBestCategoryMatch({
+        rawDescription: params.rawDescription,
+        merchantCandidate: params.normalized.merchantCandidate,
+        direction: params.normalized.direction,
+      });
+
+    if (memoryMatch && memoryMatch.score >= 0.65) {
+      return {
+        normalizedMerchantName:
+          memoryMatch.normalizedMerchantName ??
+          params.normalized.merchantCandidate,
+        categoryId: memoryMatch.categoryId,
+        categoryName: memoryMatch.categoryName,
+        businessType: memoryMatch.businessType ?? null,
+        confidence: memoryMatch.score,
+        categoryStatus: TransactionCategoryStatus.CATEGORIZED,
       };
     }
 
@@ -73,7 +110,8 @@ export class TransactionCategorizerService {
       if (category) {
         return {
           normalizedMerchantName:
-            enrichment.normalizedMerchantName ?? params.normalized.merchantCandidate,
+            enrichment.normalizedMerchantName ??
+            params.normalized.merchantCandidate,
           categoryId: category.id,
           categoryName: category.name,
           businessType: enrichment.businessType ?? null,
@@ -94,7 +132,8 @@ export class TransactionCategorizerService {
       if (category) {
         return {
           normalizedMerchantName:
-            llmClassification.normalizedMerchantName ?? params.normalized.merchantCandidate,
+            llmClassification.normalizedMerchantName ??
+            params.normalized.merchantCandidate,
           categoryId: category.id,
           categoryName: category.name,
           businessType: llmClassification.businessType,
@@ -124,7 +163,10 @@ export class TransactionCategorizerService {
     }
 
     const enrichment = await this.merchantEnrichmentService.enrich({
-      description: normalized.merchantCandidate === rawDescription?.trim().toUpperCase() ? null : rawDescription,
+      description:
+        normalized.merchantCandidate === rawDescription?.trim().toUpperCase()
+          ? null
+          : rawDescription,
       merchantCandidate: normalized.merchantCandidate,
     });
 
@@ -161,7 +203,9 @@ export class TransactionCategorizerService {
   private async findRuleMatch(
     userId: string,
     merchantCandidate: string | null,
-  ): Promise<(Prisma.MerchantCategoryRuleGetPayload<{ include: { category: true } }>) | null> {
+  ): Promise<Prisma.MerchantCategoryRuleGetPayload<{
+    include: { category: true };
+  }> | null> {
     if (!merchantCandidate) {
       return null;
     }
@@ -186,7 +230,9 @@ export class TransactionCategorizerService {
   }
 
   private matchesRule(
-    rule: Prisma.MerchantCategoryRuleGetPayload<{ include: { category: true } }>,
+    rule: Prisma.MerchantCategoryRuleGetPayload<{
+      include: { category: true };
+    }>,
     merchantCandidate: string,
   ): boolean {
     const pattern = rule.rawPattern.trim().toUpperCase();
@@ -223,12 +269,12 @@ export class TransactionCategorizerService {
     }
 
     const categories = await this.prisma.category.findMany({
-  select: {
-    name: true,
-  },
-});
+      select: {
+        name: true,
+      },
+    });
 
-const categoryNames = categories.map((c) => c.name);
+    const categoryNames = categories.map((c) => c.name);
 
     const response = await this.openai.responses.create({
       model: this.model,
@@ -278,7 +324,12 @@ const categoryNames = categories.map((c) => c.name);
               businessType: { type: ['string', 'null'] },
               confidence: { type: 'number' },
             },
-            required: ['category', 'normalizedMerchantName', 'businessType', 'confidence'],
+            required: [
+              'category',
+              'normalizedMerchantName',
+              'businessType',
+              'confidence',
+            ],
           },
         },
       },

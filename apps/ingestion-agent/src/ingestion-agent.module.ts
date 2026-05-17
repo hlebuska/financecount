@@ -12,9 +12,11 @@ import { TransactionDeduplicationService } from './transaction-deduplication.ser
 import { TransactionFinalizerService } from './transaction-finalizer.service';
 import { TransactionNormalizerService } from './transaction-normalizer.service';
 import { TransactionStructurerService } from './transaction-structurer.service';
+import { CategorizationMemoryModule } from 'libs/categorization-memory/categorization-memory.module';
 
 @Module({
   imports: [
+    CategorizationMemoryModule,
     ConfigModule.forRoot({
       isGlobal: true,
     }),

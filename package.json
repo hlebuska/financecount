@@ -17,7 +17,8 @@
     "test:watch": "jest --watch",
     "test:cov": "jest --coverage",
     "test:debug": "node --inspect-brk -r tsconfig-paths/register -r ts-node/register node_modules/.bin/jest --runInBand",
-    "test:e2e": "jest --config ./apps/fincount/test/jest-e2e.json"
+    "test:e2e": "jest --config ./apps/fincount/test/jest-e2e.json",
+    "qdrant:setup": "tsx apps/fincount/src/scripts/setup-qdrant.ts"
   },
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.29.0",
@@ -29,6 +30,7 @@
     "@nestjs/platform-express": "^11.0.1",
     "@prisma/adapter-pg": "^7.8.0",
     "@prisma/client": "^7.8.0",
+    "@qdrant/js-client-rest": "^1.18.0",
     "axios": "^1.16.1",
     "bullmq": "^5.76.8",
     "class-transformer": "^0.5.1",
@@ -68,6 +70,7 @@
     "ts-loader": "^9.5.2",
     "ts-node": "^10.9.2",
     "tsconfig-paths": "^4.2.0",
+    "tsx": "^4.22.1",
     "typescript": "^5.7.3",
     "typescript-eslint": "^8.20.0"
   },
