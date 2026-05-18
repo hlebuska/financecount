@@ -41,6 +41,14 @@ export class IngestionFilesService {
       throw new BadRequestException('File is required.');
     }
 
+    if (!this.isPdfUpload(file)) {
+      if (file.path) {
+        await unlink(file.path).catch(() => undefined);
+      }
+
+      throw new BadRequestException('Only PDF files are supported.');
+    }
+
     await mkdir(this.uploadDir, { recursive: true });
 
     const fileContents = await readFile(file.path);
@@ -198,5 +206,11 @@ export class IngestionFilesService {
     }
 
     return file;
+  }
+
+  private isPdfUpload(file: Express.Multer.File) {
+    const extension = extname(file.originalname).toLowerCase();
+
+    return file.mimetype === 'application/pdf' || extension === '.pdf';
   }
 }

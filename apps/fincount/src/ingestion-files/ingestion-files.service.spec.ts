@@ -38,16 +38,24 @@ describe('IngestionFilesService', () => {
     jest.restoreAllMocks();
   });
 
-  const createTempUpload = async (contents: string) => {
+  const createTempUpload = async (
+    contents: string,
+    options?: {
+      originalname?: string;
+      mimetype?: string;
+    },
+  ) => {
     const dir = await mkdtemp(join(tmpdir(), 'ingestion-upload-'));
-    const path = join(dir, 'test.csv');
+    const originalname = options?.originalname ?? 'test.pdf';
+    const mimetype = options?.mimetype ?? 'application/pdf';
+    const path = join(dir, originalname);
     await writeFile(path, contents);
 
     return {
       cleanup: () => rm(dir, { recursive: true, force: true }),
       file: {
-        originalname: 'test.csv',
-        mimetype: 'text/csv',
+        originalname,
+        mimetype,
         size: Buffer.byteLength(contents),
         path,
       } as Express.Multer.File,
@@ -68,7 +76,7 @@ describe('IngestionFilesService', () => {
       process.cwd(),
       'uploads',
       'ingestion-files',
-      `${id}-test.csv`,
+      `${id}-test.pdf`,
     );
 
     prisma.ingestionFile.create.mockResolvedValue({
@@ -78,7 +86,7 @@ describe('IngestionFilesService', () => {
     prisma.ingestionFile.update.mockResolvedValue({
       id,
       status: FileProcessingStatus.QUEUED,
-      originalName: 'test.csv',
+      originalName: 'test.pdf',
       sizeBytes: upload.file.size,
       sha256Hash: expectedHash,
     });
@@ -107,7 +115,7 @@ describe('IngestionFilesService', () => {
         fileId: id,
         status: FileProcessingStatus.QUEUED,
         queueJobId: 'job-1',
-        originalName: 'test.csv',
+        originalName: 'test.pdf',
         sizeBytes: upload.file.size,
         sha256Hash: expectedHash,
       });
@@ -125,7 +133,7 @@ describe('IngestionFilesService', () => {
       process.cwd(),
       'uploads',
       'ingestion-files',
-      `${id}-test.csv`,
+      `${id}-test.pdf`,
     );
 
     prisma.ingestionFile.create.mockResolvedValue({
@@ -135,7 +143,7 @@ describe('IngestionFilesService', () => {
     prisma.ingestionFile.update.mockResolvedValue({
       id,
       status: FileProcessingStatus.QUEUED,
-      originalName: 'test.csv',
+      originalName: 'test.pdf',
       sizeBytes: upload.file.size,
       sha256Hash: expectedHash,
     });
@@ -148,13 +156,35 @@ describe('IngestionFilesService', () => {
         fileId: id,
         status: FileProcessingStatus.QUEUED,
         queueJobId: 'job-duplicate',
-        originalName: 'test.csv',
+        originalName: 'test.pdf',
         sizeBytes: upload.file.size,
         sha256Hash: expectedHash,
       });
       await expect(stat(finalStoragePath)).resolves.toBeDefined();
     } finally {
       await rm(finalStoragePath, { force: true });
+      await upload.cleanup();
+    }
+  });
+
+  it('rejects non-pdf uploads before creating a record', async () => {
+    const upload = await createTempUpload('not a pdf', {
+      originalname: 'full.dump',
+      mimetype: 'application/octet-stream',
+    });
+
+    try {
+      await expect(
+        service.registerUploadedFile({
+          userId: 'user-1',
+          file: upload.file,
+        }),
+      ).rejects.toThrow('Only PDF files are supported.');
+
+      expect(prisma.ingestionFile.create).not.toHaveBeenCalled();
+      expect(fileIngestionQueue.add).not.toHaveBeenCalled();
+      await expect(stat(upload.file.path)).rejects.toThrow();
+    } finally {
       await upload.cleanup();
     }
   });

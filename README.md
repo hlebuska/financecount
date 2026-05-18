@@ -1,125 +1,239 @@
-<p align="center">
-  <a href="http://nestjs.com/" target="blank"><img src="https://nestjs.com/img/logo-small.svg" width="120" alt="Nest Logo" /></a>
-</p>
+# Fincount Backend
 
-[circleci-image]: https://img.shields.io/circleci/build/github/nestjs/nest/master?token=abc123def456
-[circleci-url]: https://circleci.com/gh/nestjs/nest
+Fincount is a multi-service personal finance assistant that ingests bank statement files, extracts transaction data, enriches merchant context, categorizes spending, computes analytics, and answers user questions through an advisor agent.
 
-  <p align="center">A progressive <a href="http://nodejs.org" target="_blank">Node.js</a> framework for building efficient and scalable server-side applications.</p>
-    <p align="center">
-<a href="https://www.npmjs.com/~nestjscore" target="_blank"><img src="https://img.shields.io/npm/v/@nestjs/core.svg" alt="NPM Version" /></a>
-<a href="https://www.npmjs.com/~nestjscore" target="_blank"><img src="https://img.shields.io/npm/l/@nestjs/core.svg" alt="Package License" /></a>
-<a href="https://www.npmjs.com/~nestjscore" target="_blank"><img src="https://img.shields.io/npm/dm/@nestjs/common.svg" alt="NPM Downloads" /></a>
-<a href="https://circleci.com/gh/nestjs/nest" target="_blank"><img src="https://img.shields.io/circleci/build/github/nestjs/nest/master" alt="CircleCI" /></a>
-<a href="https://discord.gg/G7Qnnhy" target="_blank"><img src="https://img.shields.io/badge/discord-online-brightgreen.svg" alt="Discord"/></a>
-<a href="https://opencollective.com/nest#backer" target="_blank"><img src="https://opencollective.com/nest/backers/badge.svg" alt="Backers on Open Collective" /></a>
-<a href="https://opencollective.com/nest#sponsor" target="_blank"><img src="https://opencollective.com/nest/sponsors/badge.svg" alt="Sponsors on Open Collective" /></a>
-  <a href="https://paypal.me/kamilmysliwiec" target="_blank"><img src="https://img.shields.io/badge/Donate-PayPal-ff3f59.svg" alt="Donate us"/></a>
-    <a href="https://opencollective.com/nest#sponsor"  target="_blank"><img src="https://img.shields.io/badge/Support%20us-Open%20Collective-41B883.svg" alt="Support us"></a>
-  <a href="https://twitter.com/nestframework" target="_blank"><img src="https://img.shields.io/twitter/follow/nestframework.svg?style=social&label=Follow" alt="Follow us on Twitter"></a>
-</p>
-  <!--[![Backers on Open Collective](https://opencollective.com/nest/backers/badge.svg)](https://opencollective.com/nest#backer)
-  [![Sponsors on Open Collective](https://opencollective.com/nest/sponsors/badge.svg)](https://opencollective.com/nest#sponsor)-->
+This backend repository contains the API, worker agents, MCP server, data layer, and supporting services.
 
-## Description
+## What It Does
 
-[Nest](https://github.com/nestjs/nest) framework TypeScript starter repository.
+- Accepts uploaded financial files through the main API
+- Parses PDF statements through a dedicated parser service
+- Structures and normalizes raw transaction rows
+- Detects duplicates before writing final transactions
+- Enriches merchant context through an MCP tool backed by web search
+- Categorizes transactions using memory, merchant enrichment, and LLM fallback
+- Recomputes financial stats and signals asynchronously
+- Serves an advisor agent that answers questions using SQL-backed tools and RAG knowledge retrieval
 
-## Project setup
+## System Components
 
-```bash
-$ npm install
+- `apps/fincount`
+  Main API. Handles file uploads, categories, transactions, review resolution, and analysis endpoints.
+- `apps/ingestion-agent`
+  Worker that processes uploaded files end-to-end.
+- `apps/analyst-agent`
+  Worker that recomputes stats and financial signals after ingestion changes.
+- `apps/advisor-agent`
+  Conversational finance assistant using LangChain tools plus RAG-backed knowledge retrieval.
+- `apps/merchant-mcp`
+  MCP server exposing merchant enrichment as a tool.
+- `libs/db`
+  Prisma-backed data access.
+- `libs/rag`
+  Embeddings and Qdrant integration.
+- `libs/categorization-memory`
+  Reuse layer for previous categorization patterns.
+- `services/parser-service`
+  FastAPI service that extracts text and tables from PDFs.
+
+## High-Level Flow
+
+1. A file is uploaded to the main API.
+2. The API stores file metadata and queues an ingestion job in BullMQ.
+3. `ingestion-agent` calls `parser-service` to extract PDF text.
+4. The ingestion pipeline structures, normalizes, deduplicates, enriches, and categorizes each transaction.
+5. Finalized transactions are written to Postgres.
+6. The ingestion flow schedules analysis refresh work.
+7. `analyst-agent` recomputes metrics and signals for week, month, and all-time periods.
+8. `advisor-agent` answers questions from stored analytics, transactions, review items, and RAG knowledge.
+
+## Tech Stack
+
+- NestJS
+- Prisma + PostgreSQL
+- BullMQ + Redis
+- Qdrant
+- LangChain
+- OpenAI API
+- Model Context Protocol SDK
+- FastAPI + pdfplumber
+
+## Repository Structure
+
+```text
+fincount/
+  apps/
+    fincount/
+    ingestion-agent/
+    analyst-agent/
+    advisor-agent/
+    merchant-mcp/
+  libs/
+    db/
+    rag/
+    categorization-memory/
+    common/
+    contracts/
+  prisma/
+  services/parser-service/
+  docker-compose.yml
 ```
 
-## Compile and run the project
-
-```bash
-# development
-$ npm run start
-
-# watch mode
-$ npm run start:dev
-
-# production mode
-$ npm run start:prod
-```
-
-## Local port map
-
-Default local ports used by this repo:
+## Local Ports
 
 - `fincount` API: `3000`
 - `ingestion-agent`: `3001`
 - `analyst-agent`: `3002`
 - `advisor-agent`: `3003`
-- `merchant-mcp` HTTP transport: `3004`
+- `merchant-mcp`: `3004`
 - `parser-service`: `8001`
 - `postgres`: `5432`
 - `redis`: `6379`
+- `qdrant`: `6333`
 
-The Nest apps read these env vars:
+## Environment Variables
 
+The repo currently reads these variables in code:
+
+- `DATABASE_URL`
+- `OPENAI_API_KEY` or `LLM_API_KEY`
+- `CHAT_MODEL`
+- `REDIS_HOST`
+- `REDIS_PORT`
+- `MERCHANT_MCP_URL`
 - `API_PORT`
 - `INGESTION_AGENT_PORT`
 - `ANALYST_AGENT_PORT`
 - `ADVISOR_AGENT_PORT`
 - `MCP_SERVER_PORT`
 
-The ingestion agent should point to the merchant MCP server with:
+Typical local value:
 
 ```env
 MERCHANT_MCP_URL=http://localhost:3004
 ```
 
-## Run tests
+## Setup
+
+### 1. Install backend dependencies
 
 ```bash
-# unit tests
-$ npm run test
-
-# e2e tests
-$ npm run test:e2e
-
-# test coverage
-$ npm run test:cov
+npm install
 ```
 
-## Deployment
-
-When you're ready to deploy your NestJS application to production, there are some key steps you can take to ensure it runs as efficiently as possible. Check out the [deployment documentation](https://docs.nestjs.com/deployment) for more information.
-
-If you are looking for a cloud-based platform to deploy your NestJS application, check out [Mau](https://mau.nestjs.com), our official platform for deploying NestJS applications on AWS. Mau makes deployment straightforward and fast, requiring just a few simple steps:
+### 2. Start infrastructure
 
 ```bash
-$ npm install -g @nestjs/mau
-$ mau deploy
+docker compose up -d postgres redis qdrant
 ```
 
-With Mau, you can deploy your application in just a few clicks, allowing you to focus on building features rather than managing infrastructure.
+### 3. Prepare the database
 
-## Resources
+```bash
+npx prisma migrate deploy
+```
 
-Check out a few resources that may come in handy when working with NestJS:
+If you are working from a clean local environment and want development migrations instead:
 
-- Visit the [NestJS Documentation](https://docs.nestjs.com) to learn more about the framework.
-- For questions and support, please visit our [Discord channel](https://discord.gg/G7Qnnhy).
-- To dive deeper and get more hands-on experience, check out our official video [courses](https://courses.nestjs.com/).
-- Deploy your application to AWS with the help of [NestJS Mau](https://mau.nestjs.com) in just a few clicks.
-- Visualize your application graph and interact with the NestJS application in real-time using [NestJS Devtools](https://devtools.nestjs.com).
-- Need help with your project (part-time to full-time)? Check out our official [enterprise support](https://enterprise.nestjs.com).
-- To stay in the loop and get updates, follow us on [X](https://x.com/nestframework) and [LinkedIn](https://linkedin.com/company/nestjs).
-- Looking for a job, or have a job to offer? Check out our official [Jobs board](https://jobs.nestjs.com).
+```bash
+npx prisma migrate dev
+```
 
-## Support
+### 4. Start the parser service
 
-Nest is an MIT-licensed open source project. It can grow thanks to the sponsors and support by the amazing backers. If you'd like to join them, please [read more here](https://docs.nestjs.com/support).
+```bash
+python -m venv .venv
 
-## Stay in touch
+# macOS/Linux
+source .venv/bin/activate
 
-- Author - [Kamil Myśliwiec](https://twitter.com/kammysliwiec)
-- Website - [https://nestjs.com](https://nestjs.com/)
-- Twitter - [@nestframework](https://twitter.com/nestframework)
+# Windows PowerShell
+.venv\Scripts\Activate.ps1
 
-## License
+pip install -r services/parser-service/requirements.txt
 
-Nest is [MIT licensed](https://github.com/nestjs/nest/blob/master/LICENSE).
+uvicorn main:app --app-dir services/parser-service --reload --host 0.0.0.0 --port 8001
+```
+
+### 5. Seed or prepare Qdrant if needed
+
+```bash
+npm run qdrant:setup
+```
+
+### 6. Start the Nest apps
+
+Run each command in a separate terminal from the repo root.
+
+```bash
+npx nest start fincount --watch
+npx nest start ingestion-agent --watch
+npx nest start analyst-agent --watch
+npx nest start advisor-agent --watch
+npx nest start merchant-mcp --watch
+```
+
+If you need stdio MCP transport instead of HTTP:
+
+```bash
+MCP_TRANSPORT=stdio npx nest start merchant-mcp --watch
+```
+
+## Running Tests
+
+```bash
+npm run test
+npm run test:e2e
+npm run test:cov
+```
+
+Scenario-based test coverage for capstone review is documented in `TEST_SCENARIOS.md`.
+
+## Main Endpoints
+
+### Main API
+
+- `POST /ingestion-files/upload`
+- `GET /ingestion-files`
+- `GET /transactions`
+- `GET /categories`
+- `GET /analysis/stats`
+- `GET /analysis/signals`
+
+### Advisor Agent
+
+- `GET /conversations`
+- `GET /conversations/:id/messages`
+- `POST /advisor/query`
+
+### Parser Service
+
+- `POST /parse`
+
+## Current Architecture Notes
+
+- Merchant enrichment is implemented as an MCP tool consumed by the ingestion agent over HTTP.
+- The advisor agent uses SQL-backed retrieval tools for user facts and Qdrant for general finance knowledge retrieval.
+- Analysis recomputation is asynchronous and debounced through BullMQ.
+- The current API and advisor flow use a hardcoded demo user in several places. This is acceptable for a local capstone demo, but it is not production-ready multi-user auth.
+
+## Known Limitations
+
+- No authentication or tenant isolation yet; several endpoints use `demo-user`.
+- Observability is currently lightweight and mostly based on Nest `Logger` output rather than full tracing.
+- The quality of categorization and merchant enrichment depends on upstream model responses and available web evidence.
+- The parser service is focused on PDF extraction and may need extension for more file types.
+
+## Useful Files
+
+- `APPS_START_COMMANDS.md`
+- `docker-compose.yml`
+- `prisma/schema.prisma`
+- `apps/ingestion-agent/src/file-ingestion.processor.ts`
+- `apps/analyst-agent/src/analyst-agent.service.ts`
+- `apps/advisor-agent/src/advisor-agent.service.ts`
+- `apps/merchant-mcp/src/merchant-mcp-server.service.ts`
+
+## Frontend
+
+The React client lives in the sibling directory `../fincount-frontend` and talks to this backend over HTTP.
