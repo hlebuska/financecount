@@ -1,7 +1,7 @@
 import { Injectable } from '@nestjs/common';
 import { AIMessage, HumanMessage, SystemMessage, createAgent, tool } from 'langchain';
 import { ChatOpenAI } from '@langchain/openai';
-import { AnalysisPeriodType, ConversationMessageRole } from '@prisma/client';
+import { AnalysisPeriodType, ConversationMessageRole, TransactionDirection } from '@prisma/client';
 import { z } from 'zod';
 import { AdvisorKnowledgeService } from './advisor-knowledge.service';
 import { AdvisorRetrievalService } from './advisor-retrieval.service';
@@ -29,6 +29,7 @@ const recentTransactionsToolSchema = z.object({
   periodType: queryPeriodSchema.describe('Use WEEK, MONTH, or ALL_TIME.'),
   category: z.string().nullable(),
   merchant: z.string().nullable(),
+  direction: z.enum(['EXPENSE', 'INCOME']).nullable(),
   limit: z.number().int().min(1).max(20).nullable(),
 });
 const reviewItemsToolSchema = z.object({
@@ -119,24 +120,29 @@ export class AdvisorAgentService {
         },
       ),
       tool(
-        async ({ periodType, category, merchant, limit }: z.infer<typeof recentTransactionsToolSchema>) => {
+        async ({ periodType, category, merchant, direction, limit }: z.infer<typeof recentTransactionsToolSchema>) => {
           const transactions = await this.retrievalService.getRecentTransactions(USER_ID, {
             periodType: periodType as AnalysisPeriodType | undefined,
             category,
             merchant,
-            limit,
+            direction: direction as TransactionDirection | null,
+            limit: limit ?? undefined,
           });
           return JSON.stringify(this.retrievalService.formatTransactionsForFacts(transactions), null, 2);
         },
         {
           name: 'get_recent_transactions',
-          description: 'Get recent transactions, optionally filtered by period, category, or merchant.',
+          description: 'Get recent transactions, optionally filtered by period, category, merchant, or direction.',
           schema: recentTransactionsToolSchema,
         },
       ),
       tool(
         async ({ status, limit }: z.infer<typeof reviewItemsToolSchema>) => {
-          const reviews = await this.retrievalService.getReviewItems(USER_ID, status, limit ?? 10);
+          const reviews = await this.retrievalService.getReviewItems(
+            USER_ID,
+            status ?? undefined,
+            limit ?? 10,
+          );
           return JSON.stringify(reviews, null, 2);
         },
         {
@@ -164,7 +170,17 @@ export class AdvisorAgentService {
       'Use SQL-backed tools for user-specific facts: transactions, reviews, stats, and signals.',
       'Use finance knowledge retrieval only for general guidance or explanation framing.',
       'Never invent totals, trends, or transaction facts.',
+      'Do not claim that no transactions exist in the user data unless you checked ALL_TIME or the user explicitly asked about a narrower period.',
+      'Do not claim that no income exists unless you checked ALL_TIME overall stats or income-filtered transactions.',
+      'If the user asks whether they have income, salary, or incoming transactions, prefer ALL_TIME stats and/or get_recent_transactions filtered with direction=INCOME.',
       'If data is incomplete or uncategorized, mention that in limitations.',
+      'Blocks are optional. Only emit transaction_card blocks when specific transactions materially support the answer.',
+      'For questions asking to show, list, highlight, or display specific transactions, prefer a transaction_card block when you have matching transactions.',
+      'For questions like "show me the last transaction", "show transactions in category X", or "what purchases caused this", call get_recent_transactions and return a transaction_card block.',
+      'If the user asks for the last or latest transaction in a category or merchant, include that transaction in a transaction_card block instead of describing it only in prose.',
+      'Only emit chart blocks when a comparison or trend is central to the answer.',
+      'If you emit a transaction_card block, include at most 5 transactions.',
+      'If you emit a chart block, use bar or line charts only and provide ready-to-render data points.',
       'Return concise, helpful structured output.',
     ].join(' '),
   });
@@ -246,6 +262,23 @@ export class AdvisorAgentService {
 
     if (response.limitations.length > 0) {
       sections.push(`Limitations:\n- ${response.limitations.join('\n- ')}`);
+    }
+
+    const transactionCardCount = response.blocks.filter((block) => block.type === 'transaction_card').length;
+    const chartCount = response.blocks.filter((block) => block.type === 'chart').length;
+
+    if (transactionCardCount > 0 || chartCount > 0) {
+      const parts: string[] = [];
+
+      if (transactionCardCount > 0) {
+        parts.push(`${transactionCardCount} transaction highlight${transactionCardCount === 1 ? '' : 's'}`);
+      }
+
+      if (chartCount > 0) {
+        parts.push(`${chartCount} chart${chartCount === 1 ? '' : 's'}`);
+      }
+
+      sections.push(`Visuals included: ${parts.join(' and ')}.`);
     }
 
     return sections.filter(Boolean).join('\n\n');

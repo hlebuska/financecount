@@ -3,6 +3,7 @@ import {
   AnalysisDimensionType,
   AnalysisPeriodType,
   ReviewItemStatus,
+  TransactionDirection,
   TransactionCategoryStatus,
 } from '@prisma/client';
 import { getAllTimeWindow, getAnalysisMonthWindow, getAnalysisWeekWindow, getCurrentAnalysisTime } from '@app/common';
@@ -103,6 +104,7 @@ export class AdvisorRetrievalService {
       periodType?: AnalysisPeriodType;
       category?: string | null;
       merchant?: string | null;
+      direction?: TransactionDirection | null;
     },
   ) {
     const occurredAt = this.getOccurredAtWindow(params.periodType);
@@ -120,6 +122,7 @@ export class AdvisorRetrievalService {
               mode: 'insensitive',
             }
           : undefined,
+        direction: params.direction ?? undefined,
       },
       include: {
         category: true,
@@ -253,6 +256,7 @@ export class AdvisorRetrievalService {
       occurredAt: transaction.occurredAt.toISOString(),
       amount: Number(transaction.amount),
       currency: transaction.currency,
+      direction: transaction.direction,
       merchant: transaction.normalizedMerchantName ?? transaction.rawMerchantLabel ?? 'Unknown Merchant',
       category: transaction.category?.name ?? 'Uncategorized',
       categoryStatus: transaction.categoryStatus,

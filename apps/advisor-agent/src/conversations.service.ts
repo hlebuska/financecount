@@ -252,6 +252,10 @@ export class ConversationsService {
       role: message.role === ConversationMessageRole.USER ? 'user' : 'assistant',
       text: message.contentText,
       createdAt: message.createdAt.toISOString(),
+      responseJson:
+        'responseJson' in message && message.responseJson && typeof message.responseJson === 'object'
+          ? (message.responseJson as ConversationMessageView['responseJson'])
+          : null,
     };
   }
 }
