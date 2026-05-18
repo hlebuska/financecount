@@ -9,12 +9,35 @@ const CURRENCY_ALIASES: Record<string, string> = {
   USD: 'USD',
   EUR: 'EUR',
   RUB: 'RUB',
+  KZTKZT: 'KZT',
   TEN: 'KZT',
   TENGE: 'KZT',
+  TENGES: 'KZT',
+  ТЕНГЕ: 'KZT',
+  ТГ: 'KZT',
   '₸': 'KZT',
+  KGSKGS: 'KGS',
+  SOM: 'KGS',
+  SOMS: 'KGS',
+  СОМ: 'KGS',
+  СОМОВ: 'KGS',
   '$': 'USD',
+  US$: 'USD',
+  DOLLAR: 'USD',
+  DOLLARS: 'USD',
+  ДОЛЛАР: 'USD',
+  ДОЛЛАРОВ: 'USD',
   '€': 'EUR',
+  EURO: 'EUR',
+  EUROS: 'EUR',
+  ЕВРО: 'EUR',
   '₽': 'RUB',
+  RUR: 'RUB',
+  RUBLE: 'RUB',
+  RUBLES: 'RUB',
+  РУБ: 'RUB',
+  РУБЛЬ: 'RUB',
+  РУБЛЕЙ: 'RUB',
 };
 
 const GENERIC_MERCHANT_DESCRIPTORS = new Set([
@@ -128,9 +151,31 @@ export class TransactionNormalizerService {
       return null;
     }
 
-    const compact = rawCurrencyText.replace(/\s+/g, '').toUpperCase();
+    const upper = rawCurrencyText.toUpperCase();
+    const compact = upper.replace(/\s+/g, '');
+    const alphanumeric = compact.replace(/[.,;:()\[\]{}<>\\/-]/g, '');
 
-    return CURRENCY_ALIASES[compact] ?? CURRENCY_ALIASES[rawCurrencyText.toUpperCase()] ?? null;
+    const directMatch =
+      CURRENCY_ALIASES[compact] ??
+      CURRENCY_ALIASES[upper] ??
+      CURRENCY_ALIASES[alphanumeric];
+
+    if (directMatch) {
+      return directMatch;
+    }
+
+    const tokens = upper.match(/[\p{L}\p{N}$€₸₽]+/gu) ?? [];
+
+    for (const token of tokens) {
+      const normalizedToken = token.replace(/[.,;:()\[\]{}<>\\/-]/g, '');
+      const alias = CURRENCY_ALIASES[normalizedToken];
+
+      if (alias) {
+        return alias;
+      }
+    }
+
+    return null;
   }
 
   private parseDirection(

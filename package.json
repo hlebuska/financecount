@@ -21,6 +21,8 @@
     "qdrant:setup": "tsx apps/fincount/src/scripts/setup-qdrant.ts"
   },
   "dependencies": {
+    "@langchain/core": "^1.1.46",
+    "@langchain/openai": "^1.4.5",
     "@modelcontextprotocol/sdk": "^1.29.0",
     "@nestjs/axios": "^4.0.1",
     "@nestjs/bullmq": "^11.0.4",
@@ -35,6 +37,7 @@
     "bullmq": "^5.76.8",
     "class-transformer": "^0.5.1",
     "class-validator": "^0.15.1",
+    "langchain": "^1.4.0",
     "multer": "^2.1.1",
     "openai": "^6.37.0",
     "pdf-parse": "^2.4.5",

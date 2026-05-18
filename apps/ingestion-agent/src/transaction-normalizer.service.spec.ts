@@ -105,4 +105,53 @@ describe('TransactionNormalizerService', () => {
     expect(result.reason).toBeNull();
     expect(result.data?.merchantCandidate).toBe('MAGNUM CASH&CARRY ALMATY');
   });
+
+  it('parses currency aliases with punctuation, separators, and Cyrillic names', () => {
+    const baseTransaction = {
+      fileId: 'file-1',
+      userId: 'user-1',
+      sourceRowIndex: 4,
+      rawDescription: 'Test merchant',
+      rawAmountText: '-100',
+      rawDirectionText: 'EXPENSE',
+      rawDateText: '17.05.2026 14:20',
+      normalizedAmount: null,
+      normalizedCurrency: null,
+      normalizedDirection: null,
+      normalizedOccurredAt: null,
+      normalizedMerchantCandidate: null,
+      sourceFingerprint: null,
+      fuzzyFingerprint: null,
+      rawPayload: null,
+      status: RawTransactionStatus.EXTRACTED,
+      parserConfidence: null,
+      skipReason: null,
+      createdAt: new Date('2026-05-17T00:00:00.000Z'),
+      updatedAt: new Date('2026-05-17T00:00:00.000Z'),
+    };
+
+    expect(
+      service.normalize({
+        ...baseTransaction,
+        id: 'raw-kzt',
+        rawCurrencyText: 'KZT/₸',
+      }).data?.currency,
+    ).toBe('KZT');
+
+    expect(
+      service.normalize({
+        ...baseTransaction,
+        id: 'raw-rub',
+        rawCurrencyText: 'руб.',
+      }).data?.currency,
+    ).toBe('RUB');
+
+    expect(
+      service.normalize({
+        ...baseTransaction,
+        id: 'raw-kgs',
+        rawCurrencyText: 'сом',
+      }).data?.currency,
+    ).toBe('KGS');
+  });
 });
